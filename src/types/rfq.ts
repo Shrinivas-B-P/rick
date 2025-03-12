@@ -1,11 +1,11 @@
-import { Document, Types } from 'mongoose';
+import { Document, Types } from "mongoose";
 
 export interface GeneralDetails {
   id: string;
   title: string;
   description?: string;
   dueDate: Date;
-  status: 'draft' | 'published' | 'closed';
+  status: "draft" | "published" | "closed";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -64,6 +64,7 @@ export interface Supplier {
 
 export interface RFQ {
   status: string;
+  comercialTable: any[];
   generalDetails: {
     title: string;
     status: string;
@@ -85,4 +86,4 @@ export interface RFQ {
   updatedAt?: Date;
 }
 
-export interface RFQDocument extends Document, RFQ {} 
+export interface RFQDocument extends Document, RFQ {}
