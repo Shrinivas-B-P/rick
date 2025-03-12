@@ -4,6 +4,7 @@ import { AppError } from "../middleware/error";
 import { sendInvitationEmail } from "../services/email.service";
 import { Supplier } from "../types/rfq";
 import { Document, Types } from "mongoose";
+import { RFQAnalysis, createAnalysisPayload } from "../utils/rfq.utils";
 
 export class RFQService {
   create = async (
@@ -87,15 +88,13 @@ export class RFQService {
     }
   };
 
-  getAnalysis = async (
-    id: string
-  ): Promise<RFQDocument & { _id: Types.ObjectId }> => {
+  getAnalysis = async (id: string): Promise<RFQAnalysis> => {
     try {
-      const rfq = await RFQModel.findById(id);
+      const rfq = await this.findById(id);
       if (!rfq) {
         throw new AppError(404, "RFQ not found");
       }
-      return rfq.toObject();
+      return createAnalysisPayload(rfq);
     } catch (error) {
       throw new AppError(500, "Failed to fetch RFQ analysis");
     }
