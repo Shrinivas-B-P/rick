@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 import { config } from '../config';
 import { RFQDocument } from '../types/rfq';
+import mongoose from 'mongoose';
 
 // Define interfaces for the data structures
 interface Column {
@@ -202,7 +203,7 @@ async function generateRFQExcel(rfq: RFQDocument): Promise<string> {
     
     // Add all fields
     if (Array.isArray(rfq.generalDetails.fields)) {
-      rfq.generalDetails.fields.forEach(field => {
+      rfq.generalDetails.fields.forEach((field: any) => {
         if (field.label && (field.value !== undefined && field.value !== null)) {
           generalSheet.addRow({ 
             field: field.label, 
@@ -220,7 +221,7 @@ async function generateRFQExcel(rfq: RFQDocument): Promise<string> {
         
         // Add subsection fields
         if (Array.isArray(subsection.fields)) {
-          subsection.fields.forEach((field: Field) => {
+          subsection.fields.forEach((field: any) => {
             if (field.label && (field.value !== undefined && field.value !== null)) {
               generalSheet.addRow({ 
                 field: `  - ${field.label}`, // Indent subsection fields
@@ -478,7 +479,7 @@ async function generateRFQExcel(rfq: RFQDocument): Promise<string> {
     if (typeof rfq.termsAndConditions === 'object') {
       // If it's an object with fields and subsections
       if (rfq.termsAndConditions.fields && Array.isArray(rfq.termsAndConditions.fields)) {
-        rfq.termsAndConditions.fields.forEach(field => {
+        rfq.termsAndConditions.fields.forEach((field: any) => {
           if (field.label && (field.value !== undefined && field.value !== null)) {
             termsSheet.addRow({ 
               term: field.label, 
@@ -496,7 +497,7 @@ async function generateRFQExcel(rfq: RFQDocument): Promise<string> {
           
           // Add subsection fields
           if (subsection.fields && Array.isArray(subsection.fields)) {
-            subsection.fields.forEach((field: Field) => {
+            subsection.fields.forEach((field: any) => {
               if (field.label && (field.value !== undefined && field.value !== null)) {
                 termsSheet.addRow({ 
                   term: `  - ${field.label}`, // Indent subsection fields
@@ -577,18 +578,21 @@ function stripHtml(html: string): string {
 }
 
 // Send invitation email to supplier with Excel attachment
-export const sendInvitationEmail = async (email: string, data: any) => {
-  const { rfqId, rfqTitle, supplierName, rfqData } = data;
-  
-  // Generate Excel file if rfqData is provided
-  let excelFilePath = null;
-  if (rfqData) {
-    excelFilePath = await generateRFQExcel(rfqData);
+export const sendInvitationEmail = async (
+  supplierEmail: string, 
+  options: {
+    rfqId: string | mongoose.Types.ObjectId;
+    rfqTitle: string;
+    supplierName: string;
+    excelFilePath?: string;
+    rfqData?: object;
   }
+): Promise<any> => {
+  const { rfqId, rfqTitle, supplierName, excelFilePath } = options;
   
   const mailOptions: MailOptions = {
     from: config.email.from,
-    to: email,
+    to: supplierEmail,
     subject: `Invitation to respond to RFQ: ${rfqTitle}`,
     html: `
       <!DOCTYPE html>
@@ -731,7 +735,7 @@ export const sendInvitationEmail = async (email: string, data: any) => {
     `
   };
   
-  // Add attachment if Excel file was generated
+  // Add attachment if Excel file path is provided
   if (excelFilePath) {
     mailOptions.attachments = [
       {
@@ -741,20 +745,7 @@ export const sendInvitationEmail = async (email: string, data: any) => {
     ];
   }
   
-  try {
-    const result = await transporter.sendMail(mailOptions);
-    
-    // Clean up temporary file
-    if (excelFilePath) {
-      fs.unlinkSync(excelFilePath);
-    }
-    
-    return result;
-  } catch (error) {
-    // Clean up temporary file in case of error
-    if (excelFilePath && fs.existsSync(excelFilePath)) {
-      fs.unlinkSync(excelFilePath);
-    }
-    throw error;
-  }
+  // Send email
+  const result = await transporter.sendMail(mailOptions);
+  return result;
 }; 
