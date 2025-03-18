@@ -18,19 +18,19 @@ export interface RFQAnalysis {
 export const createAnalysisPayload = (
   rfq: RFQDocument & { _id: Types.ObjectId }
 ): RFQAnalysis => {
-  const items = rfq.items[0]?.tables[0]?.data;
-  const commercialTerms = rfq.comercialTable[0]?.tables[0]?.data;
+  const items = rfq.commercialTable?.tables[0]?.data;
+  const commercialTerms = rfq.commercialTermsTable?.tables[0]?.data;
   return {
     id: rfq._id.toString(),
     title: rfq.generalDetails.title,
     status: rfq.generalDetails.status,
     items: items.map((item: Record<string, string>) => ({
       id: item.id,
-      type: item["item-type"],
-      product: item["item-name"],
-      description: item["item-description"],
-      quantity: item["quantity"],
-      unit: item["unit-of-measurement"],
+      type: item.type,
+      product: item.item,
+      description: item.description,
+      quantity: Number(item.qty),
+      unit: item.uom,
     })),
     suppliers:
       rfq.suppliers?.map((supplier: Supplier) => ({
@@ -39,18 +39,18 @@ export const createAnalysisPayload = (
         email: supplier.email,
         status: supplier.status,
       })) || [],
-    questionnaires: rfq.questionnaire.map((questionnaire: any) => ({
+    questionnaires: rfq.questionnaire.subsections.map((questionnaire: any) => ({
       id: questionnaire.id,
       title: questionnaire.title,
-      questions: questionnaire.data,
+      questions: questionnaire.tables[0]?.data || [],
     })),
     commercialTerms: commercialTerms.map((term: Record<string, string>) => ({
       id: term.id,
-      type: term["item-type"],
-      product: term["item-name"],
-      description: term["item-description"],
-      quantity: term["quantity"],
-      unit: term["unit-of-measurement"],
+      type: term.type,
+      product: term.term,
+      description: term.description,
+      quantity: Number(term.qty),
+      unit: term.uom,
     })),
   };
 };

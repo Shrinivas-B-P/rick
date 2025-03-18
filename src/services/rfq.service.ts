@@ -150,7 +150,8 @@ export class RFQService {
       }
       return createAnalysisPayload(rfq);
     } catch (error) {
-      throw new AppError(500, "Failed to fetch RFQ analysis");
+      console.error("Error fetching RFQ analysis:", error);
+      throw new AppError(500, "Failed to fetch RFQ analysis: " + error);
     }
   };
 
