@@ -1,63 +1,21 @@
-import { Request, Response } from 'express';
-import { RFQModel } from '../models/rfq.model';
-import { RFQ, RFQDocument, Supplier } from '../types/rfq';
-import { sendInvitationEmail } from '../services/email.service';
-import mongoose from 'mongoose';
+import { Request, Response } from "express";
+import { RFQModel } from "../models/rfq.model";
+import { RFQ, RFQDocument, Supplier } from "../types/rfq";
+import { sendInvitationEmail } from "../services/email.service";
+import mongoose from "mongoose";
 import axios from 'axios';
+import { RFQService } from "../services/rfq.service";
 import FormData from 'form-data';
-import { RFQService } from '../services/rfq.service';
+import { AppError } from "../middleware/error";
 import fs from 'fs';
-import { ExcelService } from '../services/excel.service';
-
-// Option 1: Move the function outside the class
-function isMulterFile(file: any): file is Express.Multer.File {
-  return file && 
-         typeof file === 'object' && 
-         'buffer' in file && 
-         'originalname' in file;
-}
-
 export class RFQController {
   private rfqService: RFQService;
-  private excelService: ExcelService;
 
   constructor() {
     this.rfqService = new RFQService();
-    this.excelService = new ExcelService();
-    
-    // Bind methods to preserve 'this' context
-    this.create = this.create.bind(this);
-    this.getAll = this.getAll.bind(this);
-    this.getById = this.getById.bind(this);
-    this.update = this.update.bind(this);
-    this.delete = this.delete.bind(this);
-    this.getRFQSuppliers = this.getRFQSuppliers.bind(this);
-    this.addSupplierToRFQ = this.addSupplierToRFQ.bind(this);
-    this.updateSupplierStatus = this.updateSupplierStatus.bind(this);
-    this.removeSupplierFromRFQ = this.removeSupplierFromRFQ.bind(this);
-    this.sendRFQToSuppliers = this.sendRFQToSuppliers.bind(this);
-    this.refreshRFQWithGemini = this.refreshRFQWithGemini.bind(this);
-    this.chatWithGemini = this.chatWithGemini.bind(this);
-    this.executeRFXCommands = this.executeRFXCommands.bind(this);
-    this.processDocumentWithGemini = this.processDocumentWithGemini.bind(this);
-    this.generateEmailWithGemini = this.generateEmailWithGemini.bind(this);
-    this.generateAndSendRFQExcel = this.generateAndSendRFQExcel.bind(this);
-    this.generateRFQExcel = this.generateRFQExcel.bind(this);
-    this.sendExcelToSuppliers = this.sendExcelToSuppliers.bind(this);
-    this.sendExcelForRFQ = this.sendExcelForRFQ.bind(this);
-    this.downloadSupplierExcel = this.downloadSupplierExcel.bind(this);
-    this.processSupplierExcel = this.processSupplierExcel.bind(this);
   }
 
-  // Make it a class method with proper syntax
-  private isMulterFile(file: any): file is Express.Multer.File {
-    return file && 
-           typeof file === 'object' && 
-           'buffer' in file && 
-           'originalname' in file;
-  }
-
-  create = async (req: Request, res: Response): Promise<void> => {
+  public create = async (req: Request, res: Response): Promise<void> => {
     try {
       console.log('Creating new RFQ with data:', JSON.stringify(req.body, null, 2));
       
@@ -68,7 +26,7 @@ export class RFQController {
       if (rfq.suppliers && rfq.suppliers.length > 0) {
         // Send Excel files to all suppliers asynchronously
         // We don't await this to avoid delaying the response
-        this.sendExcelToSuppliers(rfq).catch(error => {
+        this.sendExcelToSuppliers(rfq).catch((error: any) => {
           console.error('Error sending Excel to suppliers:', error);
         });
       }
@@ -102,22 +60,7 @@ export class RFQController {
     }
   };
 
-  public async sendExcelForRFQ(req: Request, res: Response): Promise<void> {
-    console.log('req.body', req.body);
-    this.sendExcelToSuppliers(req.body).catch(error => {
-      console.error('Error sending Excel to suppliers:', error);
-    });
-    res.status(201).json({
-      success: true,
-      message: 'Mails sent successfully',
-      data: req.body
-    });
-  }
-
-  /**
-   * Helper method to send Excel files to all suppliers in an RFQ
-   */
-  private async sendExcelToSuppliers(rfq: RFQDocument): Promise<void> {
+  private sendExcelToSuppliers = async (rfq: RFQDocument): Promise<void> => {
     try {
       if (!rfq.suppliers || rfq.suppliers.length === 0) {
         console.log('No suppliers to send Excel to');
@@ -158,171 +101,149 @@ export class RFQController {
     }
   }
 
-  async getAll(req: Request, res: Response) {
+  public sendExcelForRFQ = async (req: Request, res: Response): Promise<void> => {
+    console.log('req.body', req.body);
+    this.sendExcelToSuppliers(req.body).catch(error => {
+      console.error('Error sending Excel to suppliers:', error);
+    });
+    res.status(201).json({
+      success: true,
+      message: 'Mails sent successfully',
+      data: req.body
+    });
+  }
+
+  getAll = async (req: Request, res: Response) => {
     try {
-      const rfqs = await RFQModel.find();
+      const rfqs = await this.rfqService.findAll();
       res.json(rfqs);
     } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch RFQs' });
+      res.status(500).json({ error: "Failed to fetch RFQs" });
     }
-  }
+  };
 
-  async getById(req: Request, res: Response) {
+  getById = async (req: Request, res: Response) => {
     try {
-      const rfq = await RFQModel.findById(req.params.id);
-      if (!rfq) {
-        return res.status(404).json({ error: 'RFQ not found' });
-      }
+      const rfq = await this.rfqService.findById(req.params.id);
       res.json(rfq);
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to fetch RFQ' });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({ error: error.message });
     }
-  }
+  };
 
-  async update(req: Request, res: Response) {
+  update = async (req: Request, res: Response) => {
     try {
-      const rfq = await RFQModel.findByIdAndUpdate(
-        req.params.id,
-        req.body,
-        { new: true }
-      );
-      if (!rfq) {
-        return res.status(404).json({ error: 'RFQ not found' });
-      }
+      const rfq = await this.rfqService.update(req.params.id, req.body);
       res.json(rfq);
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to update RFQ' });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({ error: error.message });
     }
-  }
+  };
 
-  async delete(req: Request, res: Response) {
+  delete = async (req: Request, res: Response) => {
     try {
-      const rfq = await RFQModel.findByIdAndDelete(req.params.id);
-      if (!rfq) {
-        return res.status(404).json({ error: 'RFQ not found' });
-      }
-      res.json({ message: 'RFQ deleted successfully' });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to delete RFQ' });
+      await this.rfqService.delete(req.params.id);
+      res.json({ message: "RFQ deleted successfully" });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({ error: error.message });
     }
-  }
+  };
 
-  // Get all suppliers for an RFQ
-  async getRFQSuppliers(req: Request, res: Response) {
+  getRFQSuppliers = async (req: Request, res: Response) => {
     try {
-      const rfq = await RFQModel.findById(req.params.id) as RFQDocument & { _id: mongoose.Types.ObjectId };
-      
-      if (!rfq) {
-        return res.status(404).json({ message: 'RFQ not found' });
-      }
-      
-      res.status(200).json(rfq.suppliers);
-    } catch (error) {
-      res.status(500).json({ message: 'Error fetching suppliers', error });
+      const suppliers = await this.rfqService.getRFQSuppliers(req.params.id);
+      res.status(200).json(suppliers);
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({ message: error.message });
     }
-  }
+  };
 
-  // Add a supplier to an RFQ
-  async addSupplierToRFQ(req: Request, res: Response) {
+  /**
+   * Add a supplier to an RFQ
+   */
+  addSupplierToRFQ = async (req: Request, res: Response) => {
     try {
-      const { id, name, email } = req.body;
-      
-      if (!id || !name || !email) {
-        return res.status(400).json({ message: 'Supplier id, name, and email are required' });
+      const rfqId = req.params.id;
+      const supplierData = req.body;
+
+      if (!rfqId || !supplierData) {
+        return res
+          .status(400)
+          .json({ message: "RFQ ID and supplier data are required" });
       }
-      
-      const rfq = await RFQModel.findById(req.params.id) as RFQDocument & { _id: mongoose.Types.ObjectId };
-      
-      if (!rfq) {
-        return res.status(404).json({ message: 'RFQ not found' });
-      }
-      
-      // Check if supplier already exists
-      const supplierExists = rfq.suppliers?.some((supplier: Supplier) => 
-        supplier.id !== undefined && supplier.id === id);
-      
-      if (supplierExists) {
-        return res.status(400).json({ message: 'Supplier already added to this RFQ' });
-      }
-      
-      // Add supplier
-      if (!rfq.suppliers) {
-        rfq.suppliers = [];
-      }
-      rfq.suppliers.push({
-        id,
-        name,
-        email,
-        status: 'invited'
-      });
-      
-      await rfq.save();
-      
-      // Send invitation email to supplier with Excel attachment
-      if (email) {
-        await sendInvitationEmail(email, {
-          rfqId: rfq._id,
-          rfqTitle: rfq.generalDetails.title,
-          supplierName: name,
-          rfqData: rfq // Pass the entire RFQ data for Excel generation
+
+      try {
+        const suppliers = await this.rfqService.addSupplierToRFQ(rfqId, supplierData);
+
+        if (!suppliers) {
+          res.status(404).json({ 
+            success: false,
+            message: `RFQ with ID ${rfqId} not found` 
+          });
+          return;
+        }
+
+        res.status(200).json({
+          success: true,
+          message: "Supplier added successfully",
+          data: suppliers
         });
-      } else {
-        console.warn(`Cannot send invitation email to supplier with ID ${id}: Email is missing`);
+      } catch (error: any) {
+        res.status(400).json({ 
+          success: false,
+          message: error.message || "Failed to add supplier" 
+        });
       }
-      
-      res.status(201).json(rfq.suppliers);
-    } catch (error) {
-      res.status(500).json({ message: 'Error adding supplier', error });
+    } catch (error: any) {
+      res.status(500).json({ 
+        success: false,
+        message: "Server error",
+        error: error.message 
+      });
     }
-  }
+  };
 
-  // Update supplier status
-  async updateSupplierStatus(req: Request, res: Response) {
+  updateSupplierStatus = async (req: Request, res: Response) => {
     try {
       const { id, supplierId } = req.params;
       const { status } = req.body;
       
-      const rfq = await RFQModel.findById(id);
-      
-      if (!rfq) {
-        return res.status(404).json({ message: "RFQ not found" });
+      // Validate input
+      if (!status) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Status is required" 
+        });
       }
       
-      // Check if suppliers array exists
-      if (!rfq.suppliers || !Array.isArray(rfq.suppliers)) {
-        return res.status(404).json({ message: "Suppliers not found for this RFQ" });
+      // Call the service method
+      const result = await this.rfqService.updateSupplierStatus(id, supplierId, status);
+      
+      if (!result.success) {
+        return res.status(404).json({ 
+          success: false,
+          message: result.message 
+        });
       }
-      
-      const supplierIndex = rfq.suppliers.findIndex(s => s.id.toString() === supplierId);
-      
-      if (supplierIndex === -1) {
-        return res.status(404).json({ message: "Supplier not found in this RFQ" });
-      }
-      
-      // Update the supplier status
-      rfq.suppliers[supplierIndex].status = status;
-      
-      // If status is 'responded', set the responseSubmittedAt date
-      if (status === 'responded') {
-        rfq.suppliers[supplierIndex].responseSubmittedAt = new Date();
-      }
-      
-      await rfq.save();
       
       res.status(200).json({
+        success: true,
         message: "Supplier status updated successfully",
-        supplier: rfq.suppliers[supplierIndex]
+        supplier: result.supplier
       });
-    } catch (error) {
-      console.error('Error updating supplier status:', error);
-      res.status(500).json({ message: "Failed to update supplier status" });
+    } catch (error: any) {
+      console.error('Error in updateSupplierStatus controller:', error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to update supplier status",
+        error: error.message || "Unknown error"
+      });
     }
   }
-
-  // Remove supplier from RFQ
-  async removeSupplierFromRFQ(req: Request, res: Response) {
+  
+  removeSupplierFromRFQ = async (req: Request, res: Response) => {
     try {
-      const rfq = await RFQModel.findById(req.params.id) as RFQDocument & { _id: mongoose.Types.ObjectId };
+      const rfq = await this.rfqService.findById(req.params.id);
       
       if (!rfq) {
         return res.status(404).json({ message: 'RFQ not found' });
@@ -351,13 +272,10 @@ export class RFQController {
     }
   }
 
-  /**
-   * Send RFQ to suppliers
-   */
-  async sendRFQToSuppliers(req: Request, res: Response) {
+  sendRFQToSuppliers = async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const rfq = await RFQModel.findById(id);
+      const rfq = await this.rfqService.findById(id);
       
       if (!rfq) {
         return res.status(404).json({ message: "RFQ not found" });
@@ -420,6 +338,15 @@ export class RFQController {
       res.status(500).json({ message: "Failed to send RFQ to suppliers" });
     }
   }
+
+  getAnalysis = async (req: Request, res: Response) => {
+    try {
+      const analysis = await this.rfqService.getAnalysis(req.params.id);
+      res.status(200).json(analysis);
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({ error: error.message });
+    }
+  };
 
   public refreshRFQWithGemini = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -919,7 +846,7 @@ export class RFQController {
         supplierEmails.map(async (email: string) => {
           try {
             // Find the supplier in the RFQ
-            const supplier = rfq.suppliers.find((s: Supplier) => s.email === email);
+            const supplier = rfq.suppliers?.find((s: Supplier) => s.email === email);
             if (!supplier) {
               return {
                 email,
@@ -1031,7 +958,7 @@ export class RFQController {
   /**
    * Download Excel file for a supplier for a specific RFQ
    */
-  async downloadSupplierExcel(req: Request, res: Response): Promise<void> {
+  downloadSupplierExcel = async (req: Request, res: Response): Promise<void> => {
     try {
       const { rfqId, supplierId } = req.params;
       
@@ -1094,7 +1021,7 @@ export class RFQController {
   /**
    * Process Excel file uploaded by supplier
    */
-  async processSupplierExcel(req: Request, res: Response): Promise<void> {
+  processSupplierExcel = async (req: Request, res: Response): Promise<void> => {
     try {
       const { rfqId, supplierId } = req.params;
       
@@ -1133,4 +1060,4 @@ export class RFQController {
       });
     }
   }
-} 
+}

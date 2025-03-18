@@ -1,14 +1,15 @@
-import { RFQModel } from '../models/rfq.model';
-import { RFQ, RFQDocument } from '../types/rfq';
-import mongoose from 'mongoose';
-import { AppError } from '../middleware/error';
-import { ExcelService } from './excel.service';
-import { sendInvitationEmail } from './email.service';
+import { RFQModel } from "../models/rfq.model";
+import { RFQDocument, Supplier } from "../types/rfq";
+import { AppError } from "../middleware/error";
+import { sendInvitationEmail } from "../services/email.service";
+import { Document, Types } from "mongoose";
+import { RFQAnalysis, createAnalysisPayload } from "../utils/rfq.utils";
+import { ExcelService } from "./excel.service";
 import fs from 'fs';
+import mongoose from 'mongoose';
 
 export class RFQService {
   private excelService: ExcelService;
-  
   constructor() {
     this.excelService = new ExcelService();
   }
@@ -67,59 +68,88 @@ export class RFQService {
       }
       throw error;
     }
-  }
+  } 
 
-  async findAll(query: any = {}): Promise<any[]> {
+  private sendSupplierEmails = async (
+    rfq: RFQDocument & { _id: Types.ObjectId }
+  ) => {
     try {
-      return await RFQModel.find(query).sort({ createdAt: -1 });
+      const emailPromises = rfq.suppliers?.map((supplier) =>
+        sendInvitationEmail(supplier.email || '', {
+          rfqId: rfq._id,
+          rfqTitle: rfq.generalDetails.title,
+          supplierName: supplier.name || '',
+          rfqData: rfq,
+        })
+      );
+      if (emailPromises) {
+        await Promise.all(emailPromises);
+      }
     } catch (error) {
-      throw new AppError(500, 'Failed to fetch RFQs');
+      console.error("Error sending supplier emails:", error);
     }
-  }
+  };
 
-  async findById(id: string): Promise<any | null> {
+  findAll = async (): Promise<(RFQDocument & { _id: Types.ObjectId })[]> => {
+    try {
+      const rfqs = await RFQModel.find().sort({ createdAt: -1 });
+      return rfqs.map((rfq) => rfq.toObject());
+    } catch (error) {
+      throw new AppError(500, "Failed to fetch RFQs");
+    }
+  };
+
+  findById = async (id: string): Promise<(RFQDocument & { _id: mongoose.Types.ObjectId }) | null> => {
     try {
       const rfq = await RFQModel.findById(id);
       if (!rfq) {
         return null;
       }
-      return rfq;
+      return rfq as RFQDocument & { _id: mongoose.Types.ObjectId };
     } catch (error) {
       console.error('Error finding RFQ by ID:', error);
       return null;
     }
   }
 
-  async update(id: string, rfqData: Partial<RFQ>): Promise<any | null> {
+  update = async (
+    id: string,
+    data: any
+  ): Promise<RFQDocument & { _id: Types.ObjectId }> => {
     try {
-      const rfq = await RFQModel.findByIdAndUpdate(
-        id,
-        rfqData,
-        { new: true }
-      );
-      
+      const rfq = await RFQModel.findByIdAndUpdate(id, data, { new: true });
       if (!rfq) {
-        return null;
+        throw new AppError(404, "RFQ not found");
       }
-      
-      return rfq;
+      return rfq.toObject();
     } catch (error) {
-      throw new AppError(500, 'Failed to update RFQ');
+      throw new AppError(500, "Failed to update RFQ");
     }
-  }
+  };
 
-  async delete(id: string): Promise<boolean> {
+  delete = async (id: string): Promise<void> => {
     try {
-      const result = await RFQModel.findByIdAndDelete(id);
-      return !!result;
+      const rfq = await RFQModel.findByIdAndDelete(id);
+      if (!rfq) {
+        throw new AppError(404, "RFQ not found");
+      }
     } catch (error) {
-      throw new AppError(500, 'Failed to delete RFQ');
+      throw new AppError(500, "Failed to delete RFQ");
     }
-  }
+  };
 
-  /**
-   * Generate and send Excel file for an RFQ to a specific supplier
-   */
+  getAnalysis = async (id: string): Promise<RFQAnalysis> => {
+    try {
+      const rfq = await this.findById(id);
+      if (!rfq) {
+        throw new AppError(404, "RFQ not found");
+      }
+      return createAnalysisPayload(rfq);
+    } catch (error) {
+      throw new AppError(500, "Failed to fetch RFQ analysis");
+    }
+  };
+
   async generateAndSendExcel(rfqId: string, supplierEmail: string, supplierName: string): Promise<void> {
     try {
       // Find the RFQ
@@ -135,8 +165,8 @@ export class RFQService {
       }
       
       // Find the supplier in the RFQ to get the ID
-      const supplier = rfq.suppliers.find((s: any) => s.email === supplierEmail);
-      const supplierId = supplier ? supplier.id : null;
+      const supplier = rfq.suppliers?.find((s: any) => s.email === supplierEmail);
+      const supplierId = supplier ? supplier.id : '';
       
       // Generate Excel file with supplier ID if available
       const excelFilePath = await this.excelService.generateRFQExcel(
@@ -156,7 +186,7 @@ export class RFQService {
       // If we found a supplier, update their status
       if (supplier) {
         // Update the supplier status to 'invited'
-        const updatedSuppliers = rfq.suppliers.map((s: any) => {
+        const updatedSuppliers = rfq.suppliers?.map((s: any) => {
           if (s.id.toString() === supplier.id.toString()) {
             return { ...s, status: 'invited' };
           }
@@ -259,4 +289,134 @@ export class RFQService {
       throw error;
     }
   }
-} 
+
+  getRFQSuppliers = async (id: string): Promise<Supplier[]> => {
+    try {
+      const rfq = await RFQModel.findById(id);
+      if (!rfq) {
+        throw new AppError(404, "RFQ not found");
+      }
+      return rfq.suppliers || [];
+    } catch (error) {
+      throw new AppError(500, "Failed to fetch RFQ suppliers");
+    }
+  };
+
+  /**
+   * Add a supplier to an RFQ
+   */
+  async addSupplierToRFQ(rfqId: string, supplierData: Supplier): Promise<Supplier[] | null> {
+    try {
+      const rfq = await RFQModel.findById(rfqId);
+      
+      if (!rfq) {
+        throw new Error(`RFQ with ID ${rfqId} not found`);
+      }
+      
+      // Initialize suppliers array if it doesn't exist
+      if (!rfq.suppliers) {
+        rfq.suppliers = [];
+      }
+      
+      // Check if supplier already exists
+      const supplierExists = rfq.suppliers.some(
+        (supplier: Supplier) => supplier.id === supplierData.id
+      );
+      
+      if (supplierExists) {
+        throw new Error(`Supplier with ID ${supplierData.id} already exists in this RFQ`);
+      }
+      
+      // Add supplier
+      rfq.suppliers.push({
+        ...supplierData,
+        status: 'invited', // Use a specific valid status from the union type
+      });
+      
+      await rfq.save();
+      
+      return rfq.suppliers || null; // Return null if suppliers is undefined
+    } catch (error) {
+      console.error('Error adding supplier to RFQ:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Alias for addSupplierToRFQ for backward compatibility
+   */
+  async addSupplier(rfqId: string, supplierData: Supplier): Promise<Supplier[] | null> {
+    return this.addSupplierToRFQ(rfqId, supplierData);
+  }
+
+  sendRFQToSuppliers = async (id: string): Promise<void> => {
+    try {
+      const rfq = await RFQModel.findById(id);
+      if (!rfq) {
+        throw new AppError(404, "RFQ not found");
+      }
+
+      if (!rfq.suppliers || rfq.suppliers.length === 0) {
+        throw new AppError(400, "No suppliers added to this RFQ");
+      }
+
+      await this.sendSupplierEmails(rfq.toObject());
+
+      if (rfq.generalDetails.status === "draft") {
+        rfq.generalDetails.status = "pending";
+        await rfq.save();
+      }
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(500, "Failed to send RFQ to suppliers");
+    }
+  };
+
+  /**
+   * Update supplier status in an RFQ
+   */
+  async updateSupplierStatus(rfqId: string, supplierId: string, status: string): Promise<{ success: boolean; supplier?: any; message?: string }> {
+    try {
+      const rfq = await RFQModel.findById(rfqId);
+      
+      if (!rfq) {
+        return { success: false, message: "RFQ not found" };
+      }
+      
+      // Check if suppliers array exists
+      if (!rfq.suppliers || !Array.isArray(rfq.suppliers)) {
+        return { success: false, message: "Suppliers not found for this RFQ" };
+      }
+      
+      const supplierIndex = rfq.suppliers.findIndex(s => s.id.toString() === supplierId);
+      
+      if (supplierIndex === -1) {
+        return { success: false, message: "Supplier not found in this RFQ" };
+      }
+      
+      // Validate the status is one of the allowed values
+      const validStatuses = ['invited', 'pending', 'responded', 'selected', 'rejected'];
+      if (!validStatuses.includes(status)) {
+        return { success: false, message: `Invalid status: ${status}. Must be one of: ${validStatuses.join(', ')}` };
+      }
+      
+      // Update the supplier status with type assertion
+      rfq.suppliers[supplierIndex].status = status as "invited" | "pending" | "responded" | "selected" | "rejected";
+      
+      // If status is 'responded', set the responseSubmittedAt date
+      if (status === 'responded') {
+        rfq.suppliers[supplierIndex].responseSubmittedAt = new Date();
+      }
+      
+      await rfq.save();
+      
+      return { 
+        success: true, 
+        supplier: rfq.suppliers[supplierIndex]
+      };
+    } catch (error) {
+      console.error('Error updating supplier status:', error);
+      return { success: false, message: "Failed to update supplier status" };
+    }
+  }
+}
