@@ -32,12 +32,13 @@ export const createAnalysisPayload = (
       quantity: item["quantity"],
       unit: item["unit-of-measurement"],
     })),
-    suppliers: rfq.suppliers.map((supplier: Supplier) => ({
-      id: supplier.id,
-      name: supplier.name,
-      email: supplier.email,
-      status: supplier.status,
-    })),
+    suppliers:
+      rfq.suppliers?.map((supplier: Supplier) => ({
+        id: supplier.id,
+        name: supplier.name,
+        email: supplier.email,
+        status: supplier.status,
+      })) || [],
     questionnaires: rfq.questionnaire.map((questionnaire: any) => ({
       id: questionnaire.id,
       title: questionnaire.title,

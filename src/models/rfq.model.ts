@@ -120,58 +120,70 @@ const supplierSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  phone: String,
+  address: String,
+  contactPerson: String,
   status: {
     type: String,
-    enum: ['invited', 'accepted', 'declined', 'submitted'],
-    default: 'invited'
+    enum: ['pending', 'invited', 'responded', 'selected', 'rejected'],
+    default: 'pending'
   },
+  response: mongoose.Schema.Types.Mixed,
+  responseSubmittedAt: Date,
+  excelUUID: String,
+  excelGeneratedAt: Date,
   submissionDate: Date,
-  responseData: mongoose.Schema.Types.Mixed
+  excelFile: {
+    fileId: String,
+    fileName: String,
+    generatedAt: Date,
+    downloadUrl: String
+  }
 }, { _id: false });
 
-const rfqSchema = new mongoose.Schema({
-  template: {
-    actions: [mongoose.Schema.Types.Mixed],
-    processedStructure: mongoose.Schema.Types.Mixed
+const RFQSchema = new Schema({
+  title: {
+    type: String,
+    required: [true, 'Title is required']
   },
-  
-  generalDetails: {
-    type: mongoose.Schema.Types.Mixed,
-    required: true,
-    validate: {
-      validator: function(value: any) {
-        return value && 
-               typeof value.title === 'string' && 
-               typeof value.status === 'string' &&
-               ['draft', 'pending', 'approved', 'closed'].includes(value.status) &&
-               Array.isArray(value.fields) &&
-               Array.isArray(value.subsections);
-      },
-      message: 'General details must include title, valid status, fields metadata, and subsections'
-    }
+  description: {
+    type: String
   },
-
-  scopeOfWork: [{
-    id: { type: String },
-    title: { type: String },
-    content: [{
-      heading: String,
-      description: String
-    }],
-    sections: [{
-      id: { type: String },
-      title: String,
-      content: [{
-        heading: String,
-        description: String
-      }]
-    }]
+  status: {
+    type: String,
+    default: 'Draft'
+  },
+  dueDate: {
+    type: Date
+  },
+  createdBy: {
+    type: Schema.Types.Mixed // Allow string or ObjectId
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  },
+  // Use Schema.Types.Mixed for complex nested structures
+  scopeOfWork: {
+    type: Schema.Types.Mixed
+  },
+  questionnaire: {
+    type: Schema.Types.Mixed
+  },
+  items: {
+    type: Schema.Types.Mixed
+  },
+  suppliers: {
+    type: [supplierSchema],
+    default: []
+  },
+  attachments: [{
+    type: Schema.Types.Mixed
   }],
-
-  questionnaire: [questionnaireSectionSchema],
-
-  items: [itemSectionSchema],
-
   termsAndConditions: {
     type: mongoose.Schema.Types.Mixed,
     required: true,
@@ -184,29 +196,14 @@ const rfqSchema = new mongoose.Schema({
       },
       message: 'Terms and conditions must include at least one field and a timestamp'
     }
-  },
-
-  suppliers: [supplierSchema],
-
-  createdBy: {
-    type: String,
-    required: false
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
   }
 }, {
   timestamps: true,
-  strict: false  // Allow dynamic fields in generalDetails
+  strict: false // Allow additional fields not defined in the schema
 });
 
 // Fix the pre-save hook to handle Mongoose document arrays correctly
-rfqSchema.pre('save', function(next) {
+RFQSchema.pre('save', function(next) {
   const rfq = this as unknown as RFQDocType;
   
   // Ensure generalDetails has proper structure
@@ -264,4 +261,20 @@ rfqSchema.pre('save', function(next) {
   next();
 });
 
-export const RFQModel = mongoose.model<RFQDocType>('RFQ', rfqSchema); 
+// Fix the pre-validate hook to handle Mongoose DocumentArray correctly
+RFQSchema.pre('validate', function(next) {
+  // If suppliers exist, ensure they have valid status values
+  if (this.suppliers && Array.isArray(this.suppliers)) {
+    // Instead of replacing the entire array, update each supplier individually
+    for (let i = 0; i < this.suppliers.length; i++) {
+      const supplier = this.suppliers[i];
+      if (supplier.status === 'pending') {
+        // Update the status directly
+        supplier.status = 'invited';
+      }
+    }
+  }
+  next();
+});
+
+export const RFQModel = mongoose.model<RFQDocType>('RFQ', RFQSchema); 

@@ -1,4 +1,5 @@
 import { Document, Types } from "mongoose";
+import mongoose from "mongoose";
 
 export interface GeneralDetails {
   id: string;
@@ -54,36 +55,37 @@ export interface ItemSection {
 }
 
 export interface Supplier {
-  id: number;
-  name: string;
-  email: string;
-  status: string;
-  submissionDate?: Date;
-  responseData?: any;
+  id: string | number;
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  contactPerson?: string;
+  status?: "pending" | "invited" | "responded" | "selected" | "rejected";
+  response?: any;
+  responseSubmittedAt?: Date;
+  excelUUID?: string;
+  excelGeneratedAt?: Date;
 }
 
 export interface RFQ {
-  status: string;
-  comercialTable: any[];
-  generalDetails: {
-    title: string;
-    status: string;
-    fields: any[];
-    subsections: any[];
-    [key: string]: any;
-  };
-  scopeOfWork: any[];
-  questionnaire: any[];
-  items: any[];
-  suppliers: Supplier[];
-  termsAndConditions: {
-    timestamp: string;
-    fields: any[];
-    subsections: any[];
-  };
-  createdBy?: Types.ObjectId;
+  title: string;
+  description?: string;
+  status?: string;
+  dueDate?: Date;
+  createdBy?: string | mongoose.Types.ObjectId;
   createdAt?: Date;
   updatedAt?: Date;
+  scopeOfWork?: any;
+  questionnaire?: any;
+  items?: any;
+  suppliers?: Supplier[];
+  attachments?: any[];
+  [key: string]: any; // Allow any additional properties
 }
 
-export interface RFQDocument extends Document, RFQ {}
+export interface RFQDocument extends mongoose.Document, RFQ {
+  createdBy?: string | mongoose.Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
