@@ -99,7 +99,7 @@ export class RFQController {
       console.error('Error in sendExcelToSuppliers:', error);
       throw error;
     }
-  }
+  };
 
   public sendExcelForRFQ = async (req: Request, res: Response): Promise<void> => {
     console.log('req.body', req.body);
@@ -246,7 +246,7 @@ export class RFQController {
       const rfq = await this.rfqService.findById(req.params.id);
       
       if (!rfq) {
-        return res.status(404).json({ message: 'RFQ not found' });
+        return res.status(404).json({ message: "RFQ not found" });
       }
       
       if (!rfq.suppliers) {
@@ -256,21 +256,15 @@ export class RFQController {
       const supplierIndex = rfq.suppliers.findIndex(
         (supplier: Supplier) => supplier.id?.toString() === req.params.supplierId
       );
-      
+
       if (supplierIndex === -1) {
-        return res.status(404).json({ message: 'Supplier not found in this RFQ' });
+        return res
+          .status(404)
+          .json({ message: "Supplier not found in this RFQ" });
       }
-      
+
       // Remove supplier
       rfq.suppliers.splice(supplierIndex, 1);
-      
-      await rfq.save();
-      
-      res.status(200).json({ message: 'Supplier removed successfully' });
-    } catch (error) {
-      res.status(500).json({ message: 'Error removing supplier', error });
-    }
-  }
 
   sendRFQToSuppliers = async (req: Request, res: Response) => {
     try {
