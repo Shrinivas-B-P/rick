@@ -61,7 +61,7 @@ export class ExcelService {
     
     // Create a temporary file path
     console.log('os.tmpdir()', os.tmpdir())
-    const tempFilePath = path.join(os.tmpdir(), `rfq-${rfq._id}-${Date.now()}.xlsx`);
+    const tempFilePath = path.join(os.tmpdir(), `rfq-${rfq._id}-${supplierId}.xlsx`);
     console.log('tempFilePath', tempFilePath)
     // Write to file
     await workbook.xlsx.writeFile(tempFilePath);
@@ -190,7 +190,6 @@ export class ExcelService {
           await this.processTableInSheet(sheet, table);
         }
       }
-      console.log('done222222222222222222222222222')
       // Process subsections
       if (section.subsections && Array.isArray(section.subsections) && section.subsections.length > 0) {
         // First, check if any subsections have content and create a consolidated content table
@@ -211,10 +210,12 @@ export class ExcelService {
           }
           
           // Add subsection title
-          const subsectionTitleRow = sheet.addRow([subsection.title]);
-          subsectionTitleRow.font = { bold: true, size: 12 };
-          subsectionTitleRow.height = 20;
-          sheet.addRow([]); // Empty row after title
+          if (!hasSubsectionsWithContent) {
+            const subsectionTitleRow = sheet.addRow([subsection.title]);
+            subsectionTitleRow.font = { bold: true, size: 12 };
+            subsectionTitleRow.height = 20;
+            sheet.addRow([]); // Empty row after title
+          }
           
           // Process fields in subsection - create a table with two columns
           if (subsection.fields && Array.isArray(subsection.fields) && subsection.fields.length > 0) {
@@ -763,23 +764,17 @@ export class ExcelService {
    */
   private async storeExcelForSupplier(rfqId: string, supplierId: string, filePath: string): Promise<string> {
     try {
-      // Generate a UUID for this Excel file
-      const uuid = this.generateUUID();
-      
       // Create a category name for the file storage
       const category = `excel/rfq-${rfqId}`;
       
       // Store the file with the UUID as the filename
-      const storedFile = this.fileStorageService.storeFile(
+      this.fileStorageService.storeFile(
         filePath, 
         category, 
-        `${uuid}.xlsx`
+        `rfq-${rfqId}-supplier-${supplierId}.xlsx`
       );
-      
-      // Store the UUID in the RFQ document
-      await this.storeSupplierUUID(rfqId, supplierId, uuid);
-      
-      return uuid;
+      console.log(`Excel file stored for "rfq-${rfqId}-supplier-${supplierId}.xlsx"`);
+      return `rfq-${rfqId}-supplier-${supplierId}.xlsx`;
     } catch (error) {
       console.error('Error storing Excel file for supplier:', error);
       throw error;
@@ -819,7 +814,7 @@ export class ExcelService {
       
       try {
         // Get the file path from storage
-        return this.fileStorageService.getFilePath(fileName, 'excel');
+        return this.fileStorageService.getFilePath(fileName, `excel/rfq-${rfqId}`);
       } catch (fileError) {
         console.error('Error retrieving stored Excel file, generating a new one:', fileError);
         // If the file doesn't exist or can't be accessed, generate a new one
