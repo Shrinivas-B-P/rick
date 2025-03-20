@@ -68,11 +68,8 @@ export const createAnalysisPayload = (
     })),
     commercialTerms: commercialTerms.map((term: Record<string, string>) => ({
       id: term.id,
-      type: term.type,
-      product: term.term,
+      term: term.term,
       description: term.description,
-      quantity: Number(term.qty),
-      unit: term.uom,
     })),
   };
 };
