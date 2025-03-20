@@ -103,6 +103,7 @@ export class RFQService {
   findById = async (id: string): Promise<(RFQDocument & { _id: mongoose.Types.ObjectId }) | null> => {
     try {
       const rfq = await RFQModel.findById(id);
+      console.log('service response', rfq);
       if (!rfq) {
         return null;
       }

@@ -6,8 +6,9 @@ import morgan from 'morgan';
 import { config } from './config';
 import rfqRoutes from './routes/rfq.routes';
 import { errorHandler } from './middleware/error';
+import app from './app';
 
-const app = express();
+const PORT = process.env.PORT || 3000;
 
 // Increase payload size limit
 app.use(express.json({ limit: '50mb' }));
@@ -31,8 +32,8 @@ app.use(errorHandler);
 mongoose.connect(config.mongoUri)
   .then(() => {
     console.log('Connected to MongoDB');
-    app.listen(config.port, () => {
-      console.log(`Server running on port ${config.port}`);
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
     });
   })
   .catch((error) => {
