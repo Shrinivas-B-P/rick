@@ -46,6 +46,7 @@ export class ExcelService {
     instructionsSheet.addRow(['4. Submit your response before the deadline.']);
     
     // Add Supplier sheet with details and UUID
+    console.log('supplierId', supplierId)
     if (supplierId) {
       await this.addSupplierSheet(workbook, rfq, supplierId.toString());
     }
@@ -1557,6 +1558,7 @@ export class ExcelService {
       //   excelUUID: uuid,
       //   excelGeneratedAt: new Date()
       // };
+      console.log({uuid})
       rfq.suppliers[supplierIndex].excelUUID = uuid;
       rfq.suppliers[supplierIndex].excelGeneratedAt = new Date();
       console.log(rfq.suppliers[supplierIndex], 'rfq.suppliers[supplierIndex] after')

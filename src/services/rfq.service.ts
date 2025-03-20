@@ -152,10 +152,10 @@ export class RFQService {
     }
   };
 
-  async generateAndSendExcel(rfqId: string, supplierEmail: string, supplierName: string): Promise<void> {
+  async generateAndSendExcel(rfqId: string, supplierEmail: string, supplierName: string, supplierId: string): Promise<void> {
     try {
       // Find the RFQ
-      const rfq = await this.findById(rfqId);
+      const rfq = await this.findById(rfqId); 
       if (!rfq) {
         throw new Error(`RFQ with ID ${rfqId} not found`);
       }
@@ -167,8 +167,7 @@ export class RFQService {
       }
       
       // Find the supplier in the RFQ to get the ID
-      const supplier = rfq.suppliers?.find((s: any) => s.email === supplierEmail);
-      const supplierId = supplier ? supplier.id : '';
+      const supplier = rfq.suppliers?.find((s: any) => s.id === supplierId);
       
       // Generate Excel file with supplier ID if available
       const excelFilePath = await this.excelService.generateRFQExcel(
