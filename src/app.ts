@@ -13,7 +13,6 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
 // Test middleware
 app.use((req, res, next) => {
-  console.log('Test middleware called:', req.method, req.path);
   next();
 });
 

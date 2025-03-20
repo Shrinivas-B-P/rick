@@ -1643,7 +1643,7 @@ export class ExcelService {
       // Extract data rows
       for (let rowIndex = tableStartRow; rowIndex <= tableEndRow; rowIndex++) {
         const row = worksheet.getRow(rowIndex);
-        const rowData: any = {};
+        let rowData: any = {};
         
         // Skip empty rows
         let hasData = false;
@@ -1654,10 +1654,23 @@ export class ExcelService {
         });
         
         if (!hasData) continue;
+
+        if (table.data && table.data.length >= rowIndex - tableStartRow) {
+          const originalRowData = table.data[rowIndex - tableStartRow];
+          rowData = {...originalRowData};
+          console.log({originalRowData}, 2222222222)
+          if (originalRowData) {
+            table.columns.forEach((column: any) => {
+              if (!column.editableBySupplier) {
+                rowData[column.accessorKey] = originalRowData[column.accessorKey];
+              }
+              console.log({rowData})
+            });
+          }
+        }
         
         // Map column headers to values
         table.columns.forEach((column: any, colIndex: number) => {
-          console.log({column})
           if (column.editableBySupplier) {
             const headerIndex = headerRow.findIndex(header => 
               header.toLowerCase() === column.header.toLowerCase()
@@ -1668,18 +1681,10 @@ export class ExcelService {
             }
           }
         });
-        console.log({rowData})
+        console.log({rowData}, 1111111111)
+        console.log(table.data)
         // Add non-editable data from the original table
-        if (table.data && table.data.length >= rowIndex - tableStartRow) {
-          const originalRowData = table.data[rowIndex - tableStartRow];
-          if (originalRowData) {
-            table.columns.forEach((column: any) => {
-              if (!column.editableBySupplier) {
-                rowData[column.accessorKey] = originalRowData[column.accessorKey];
-              }
-            });
-          }
-        }
+        
         
         tableData.push(rowData);
       }
