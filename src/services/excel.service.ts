@@ -292,14 +292,8 @@ export class ExcelService {
           }
           
           // Process tables in subsection
-          if (subsection.tables && Array.isArray(subsection.tables) && subsection.tables.length > 0) {
-            for (const table of subsection.tables) {
-              // Skip tables not visible to suppliers
-              if (table.visibleToSupplier === false) {
-                continue;
-              }
-              await this.processTableInSheet(sheet, table);
-            }
+          if (subsection.tables && Array.isArray(subsection.tables)) {
+            this.processTables(subsection.tables, sheet, subsection.title);
           }
         }
       }
@@ -1022,7 +1016,7 @@ export class ExcelService {
               
               // Process tables in the subsection
               if (subsection.tables && Array.isArray(subsection.tables)) {
-                this.processTables(subsection.tables, worksheet);
+                this.processTables(subsection.tables, worksheet, subsection.title);
               }
             }
           }
@@ -1085,90 +1079,112 @@ export class ExcelService {
   }
 
   /**
-   * Process tables and update their data from the Excel worksheet
+   * Process tables in a section or subsection
+   * @param tables Array of table definitions
+   * @param worksheet Excel worksheet
+   * @param parentTitle Optional parent subsection title
    */
-  private processTables(tables: any[], worksheet: ExcelJS.Worksheet): void {
+  private processTables(tables: any[], worksheet: ExcelJS.Worksheet, parentTitle?: string): void {
+    if (!tables || !Array.isArray(tables)) {
+      return;
+    }
+    
     for (const table of tables) {
-      // Skip tables not visible to suppliers
-      if (table.visibleToSupplier === false) {
-        continue;
-      }
-      
-      // Find the table in the Excel worksheet
-      let tableFound = false;
-      let headerRowNumber = 0;
-      let headerCells: string[] = [];
-      let editableColumns: { [key: string]: number } = {};
-      
-      // Find the table header row
-      worksheet.eachRow((row, rowNumber) => {
-        if (tableFound) return; // Skip if table already found
+      try {
+        if (!table.title) {
+          console.warn('Table without title found, skipping');
+          continue;
+        }
         
-        // Check if this row contains the table headers
-        const rowValues: any[] = [];
-        row.eachCell((cell, colNumber) => {
-          rowValues[colNumber - 1] = cell.value;
-        });
+        // Skip tables not visible to suppliers
+        if (table.visibleToSupplier === false) {
+          continue;
+        }
         
-        // Check if this row matches the table columns
-        const headerMatch = table.columns.some((col: any) => 
-          rowValues.includes(col.header) || rowValues.includes(col.accessorKey)
-        );
-        
-        if (headerMatch) {
-          tableFound = true;
-          headerRowNumber = rowNumber;
-          headerCells = rowValues.filter(v => v !== null && v !== undefined);
+        // If this is a table within a subsection, use the specialized extraction function
+        if (parentTitle) {
+          table.data = this.extractSubsectionTableData(table, worksheet, parentTitle);
+        } else {
+          // Use the regular table extraction logic for top-level tables
+          // Find the table in the Excel worksheet
+          let tableFound = false;
+          let headerRowNumber = 0;
+          let headerCells: string[] = [];
+          let editableColumns: { [key: string]: number } = {};
           
-          // Map column headers to their positions
-          rowValues.forEach((header, index) => {
-            // Find the corresponding column in the table definition
-            const column = table.columns.find((col: any) => 
-              col.header === header || col.accessorKey === header
+          // Find the table header row
+          worksheet.eachRow((row, rowNumber) => {
+            if (tableFound) return; // Skip if table already found
+            
+            // Check if this row contains the table headers
+            const rowValues: any[] = [];
+            row.eachCell((cell, colNumber) => {
+              rowValues[colNumber - 1] = cell.value;
+            });
+            
+            // Check if this row matches the table columns
+            const headerMatch = table.columns.some((col: any) => 
+              rowValues.includes(col.header) || rowValues.includes(col.accessorKey)
             );
             
-            if (column && column.editableBySupplier === true) {
-              editableColumns[column.id || column.accessorKey] = index;
-            }
-          });
-        }
-      });
-      
-      // If table header found, process the data rows
-      if (tableFound && headerRowNumber > 0) {
-        // Process each data row
-        let currentRowIndex = 0;
-        
-        worksheet.eachRow((row, rowNumber) => {
-          // Skip header row and rows before it
-          if (rowNumber <= headerRowNumber) return;
-          
-          // Skip empty rows
-          if (this.isEmptyRow(row)) return;
-          
-          // Get values from the row
-          const rowValues: any[] = [];
-          row.eachCell((cell, colNumber) => {
-            rowValues[colNumber - 1] = cell.value;
-          });
-          
-          // Check if we have data for this row index
-          if (table.data && Array.isArray(table.data) && currentRowIndex < table.data.length) {
-            const dataRow = table.data[currentRowIndex];
-            
-            // Update editable columns with values from Excel
-            for (const [columnId, columnIndex] of Object.entries(editableColumns)) {
-              if (columnIndex < rowValues.length) {
-                const value = this.formatCellValue(rowValues[columnIndex]);
+            if (headerMatch) {
+              tableFound = true;
+              headerRowNumber = rowNumber;
+              headerCells = rowValues.filter(v => v !== null && v !== undefined);
+              
+              // Map column headers to their positions
+              rowValues.forEach((header, index) => {
+                // Find the corresponding column in the table definition
+                const column = table.columns.find((col: any) => 
+                  col.header === header || col.accessorKey === header
+                );
                 
-                // Update the value in the data row
-                dataRow[columnId] = value;
-              }
+                if (column && column.editableBySupplier === true) {
+                  editableColumns[column.id || column.accessorKey] = index;
+                }
+              });
             }
+          });
+          
+          // If table header found, process the data rows
+          if (tableFound && headerRowNumber > 0) {
+            // Process each data row
+            let currentRowIndex = 0;
             
-            currentRowIndex++;
+            worksheet.eachRow((row, rowNumber) => {
+              // Skip header row and rows before it
+              if (rowNumber <= headerRowNumber) return;
+              
+              // Skip empty rows
+              if (this.isEmptyRow(row)) return;
+              
+              // Get values from the row
+              const rowValues: any[] = [];
+              row.eachCell((cell, colNumber) => {
+                rowValues[colNumber - 1] = cell.value;
+              });
+              
+              // Check if we have data for this row index
+              if (table.data && Array.isArray(table.data) && currentRowIndex < table.data.length) {
+                const dataRow = table.data[currentRowIndex];
+                
+                // Update editable columns with values from Excel
+                for (const [columnId, columnIndex] of Object.entries(editableColumns)) {
+                  if (columnIndex < rowValues.length) {
+                    const value = this.formatCellValue(rowValues[columnIndex]);
+                    
+                    // Update the value in the data row
+                    dataRow[columnId] = value;
+                  }
+                }
+                
+                currentRowIndex++;
+              }
+            });
           }
-        });
+        }
+      } catch (error) {
+        console.error(`Error processing table "${table.title}":`, error);
       }
     }
   }
@@ -1256,22 +1272,15 @@ export class ExcelService {
       return '';
     }
     
-    // Handle Excel date values
-    if (value && typeof value === 'object' && value.getTime) {
-      return value.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+    if (typeof value === 'object' && value.text) {
+      return value.text;
     }
     
-    // Handle rich text values
-    if (value && typeof value === 'object' && value.richText) {
-      return value.richText.map((part: any) => part.text).join('');
+    if (typeof value === 'object' && value.result) {
+      return value.result;
     }
     
-    // Handle numeric values
-    if (typeof value === 'number') {
-      return value.toString();
-    }
-    
-    return value;
+    return value.toString();
   }
 
   /**
@@ -1537,6 +1546,148 @@ export class ExcelService {
     } catch (error) {
       console.error('Error storing supplier UUID:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Extract data from a table within a subsection
+   * @param table The table definition
+   * @param worksheet The Excel worksheet
+   * @param subsectionTitle The title of the subsection containing the table
+   * @returns The extracted table data
+   */
+  private extractSubsectionTableData(table: any, worksheet: ExcelJS.Worksheet, subsectionTitle: string): any[] {
+    try {
+      const tableData: any[] = [];
+      let tableStartRow = -1;
+      let tableEndRow = -1;
+      let headerRow: string[] = [];
+      
+      // First, find the subsection title in the worksheet
+      let subsectionRowIndex = -1;
+      let tableRowIndex = -1;
+      worksheet.eachRow((row, rowIndex) => {
+        const firstCell = row.getCell(1).text.trim();
+        if (firstCell === subsectionTitle) {
+          subsectionRowIndex = rowIndex;
+          tableRowIndex = rowIndex;
+        }
+      });
+
+      console.log({subsectionRowIndex});
+      
+      if (subsectionRowIndex === -1) {
+        console.log(subsectionRowIndex === -1, {subsectionRowIndex})
+        console.warn(`Subsection "${subsectionTitle}" not found in worksheet`);
+        return [];
+      }
+      
+      // Now find the table title after the subsection title
+      // for (let i = subsectionRowIndex + 1; i <= worksheet.rowCount; i++) {
+      //   const row = worksheet.getRow(i);
+      //   const firstCell = row.getCell(1).text.trim();
+      //   if (firstCell === table.title) {
+      //     tableRowIndex = i;
+      //     break;
+      //   }
+      // }
+      
+      // if (tableRowIndex === -1) {
+      //   console.warn(`Table "${table.title}" not found in subsection "${subsectionTitle}"`);
+      //   return [];
+      // }
+      
+      // Find the header row (should be right after the table title)
+      const headerRowIndex = tableRowIndex + 2;
+      if (headerRowIndex <= worksheet.rowCount) {
+        const row = worksheet.getRow(headerRowIndex);
+        console.log({row})
+        headerRow = [];
+        
+        // Extract header values
+        row.eachCell((cell, colIndex) => {
+          headerRow.push(cell.text.trim());
+        });
+        
+        tableStartRow = headerRowIndex + 1;
+      } else {
+        console.warn(`No header row found for table "${table.title}"`);
+        return [];
+      }
+      
+      // Find the end of the table (empty row or next subsection/table title)
+      for (let i = tableStartRow; i <= worksheet.rowCount; i++) {
+        const row = worksheet.getRow(i);
+        let isEmpty = true;
+        
+        // Check if row is empty
+        row.eachCell((cell) => {
+          if (cell.text.trim() !== '') {
+            isEmpty = false;
+          }
+        });
+        
+        // Check if this is the start of another section/table
+        const firstCell = row.getCell(1).text.trim();
+        if (isEmpty || firstCell.endsWith(':') || firstCell.startsWith('Section:')) {
+          tableEndRow = i - 1;
+          break;
+        }
+        
+        // If we reached the end of the worksheet
+        if (i === worksheet.rowCount) {
+          tableEndRow = i;
+        }
+      }
+      
+      // Extract data rows
+      for (let rowIndex = tableStartRow; rowIndex <= tableEndRow; rowIndex++) {
+        const row = worksheet.getRow(rowIndex);
+        const rowData: any = {};
+        
+        // Skip empty rows
+        let hasData = false;
+        row.eachCell((cell) => {
+          if (cell.text.trim() !== '') {
+            hasData = true;
+          }
+        });
+        
+        if (!hasData) continue;
+        
+        // Map column headers to values
+        table.columns.forEach((column: any, colIndex: number) => {
+          console.log({column})
+          if (column.editableBySupplier) {
+            const headerIndex = headerRow.findIndex(header => 
+              header.toLowerCase() === column.header.toLowerCase()
+            );
+            
+            if (headerIndex !== -1) {
+              rowData[column.accessorKey] = row.getCell(headerIndex + 1).text.trim();
+            }
+          }
+        });
+        console.log({rowData})
+        // Add non-editable data from the original table
+        if (table.data && table.data.length >= rowIndex - tableStartRow) {
+          const originalRowData = table.data[rowIndex - tableStartRow];
+          if (originalRowData) {
+            table.columns.forEach((column: any) => {
+              if (!column.editableBySupplier) {
+                rowData[column.accessorKey] = originalRowData[column.accessorKey];
+              }
+            });
+          }
+        }
+        
+        tableData.push(rowData);
+      }
+      
+      return tableData;
+    } catch (error) {
+      console.error(`Error extracting data from subsection table "${table.title}":`, error);
+      return [];
     }
   }
 } 
