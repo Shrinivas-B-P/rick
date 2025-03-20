@@ -495,46 +495,65 @@ export class RFQController {
     }
   };
 
-  public executeRFXCommands = async (req: Request, res: Response): Promise<void> => {
+  /**
+   * Execute RFX commands with Gemini
+   */
+  public executedRFXCommands = async (req: Request, res: Response): Promise<void> => {
     try {
       const { rfxId, commands } = req.body;
       
-      // Validate required fields
       if (!rfxId || !commands) {
-        res.status(400).json({ 
-          success: false, 
-          message: 'rfxId and commands are required fields' 
+        res.status(400).json({
+          success: false,
+          message: 'rfxId and commands are required'
         });
         return;
       }
       
+      console.log('Executing commands for RFX:', rfxId);
+      console.log('Commands:', JSON.stringify(commands, null, 2));
+      
       // Create form data for the request
       const formData = new FormData();
-      formData.append('rfxId', rfxId);
-      formData.append('commands', commands);
       
-      // Make the request to the Gemini service using axios
+      // Convert commands array to a string with the specific format
+      let commandsString;
+      if (Array.isArray(commands)) {
+        // If it's an array, stringify it
+        commandsString = JSON.stringify(commands);
+      } else {
+        // If it's a single command, wrap it in an array and stringify
+        commandsString = JSON.stringify([commands]);
+      }
+      
+      // Add the commands and rfxId to the form data
+      formData.append("commands", commandsString);
+      formData.append("rfxId", rfxId);
+      
+      // Make the request to the Gemini service
       const response = await axios.post(
         'http://54.149.112.106:80/aerchain_kb_rfx_update_commands_gemini',
         formData,
         {
           headers: {
-            ...formData.getHeaders()
-          }
+            ...formData.getHeaders(),
+          },
         }
       );
       
+      // Return the response
       res.status(200).json({
         success: true,
         message: 'RFX commands executed successfully',
         data: response.data
       });
+      
     } catch (error: any) {
       console.error('Error executing RFX commands:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to execute RFX commands',
-        error: error.response?.data || error.message || 'Unknown error'
+        message: 'Error executing RFX commands',
+        error: error.message || 'Unknown error'
       });
     }
   };
@@ -628,7 +647,7 @@ export class RFQController {
       // Send file preparation success message
       res.write(JSON.stringify({
         success: true,
-        status: 'processing',
+        status: 'data',
         chunk: 'Processing file, we will send you updates as we process it',
         timestamp: new Date().toISOString()
       }));
@@ -731,10 +750,16 @@ export class RFQController {
       // Send final completion message
       res.write(JSON.stringify({
         success: true,
-        status: 'complete',
-        message: 'Document processing completed',
+        status: 'data',
+        chunk: 'Document processing completed, your template is ready to be used',
         progress: 100,
         results,
+        timestamp: new Date().toISOString()
+      }));
+      
+      res.write(JSON.stringify({
+        success: true,
+        status: 'complete',
         timestamp: new Date().toISOString()
       }));
       
@@ -1060,4 +1085,158 @@ export class RFQController {
       });
     }
   }
+
+  /**
+   * Get all quote request versions for a supplier
+   */
+  getSupplierQuoteHistory = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { rfqId, supplierId } = req.params;
+      
+      // Validate parameters
+      if (!rfqId || !supplierId) {
+        res.status(400).json({
+          success: false,
+          message: 'RFQ ID and Supplier ID are required'
+        });
+        return;
+      }
+      
+      // Get the quote history
+      const quoteHistory = await this.rfqService.getSupplierQuoteHistory(rfqId, supplierId);
+      
+      res.status(200).json({
+        success: true,
+        message: 'Supplier quote history retrieved successfully',
+        data: quoteHistory
+      });
+    } catch (error: any) {
+      console.error('Error getting supplier quote history:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get supplier quote history',
+        error: error.message || 'Unknown error'
+      });
+    }
+  };
+
+  /**
+   * Get a specific version of a supplier's quote request
+   */
+  getSupplierQuoteVersion = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { rfqId, supplierId, version } = req.params;
+      
+      // Validate parameters
+      if (!rfqId || !supplierId || !version) {
+        res.status(400).json({
+          success: false,
+          message: 'RFQ ID, Supplier ID, and Version are required'
+        });
+        return;
+      }
+      
+      // Get the specific quote version
+      const quoteVersion = await this.rfqService.getSupplierQuoteVersion(
+        rfqId, 
+        supplierId, 
+        parseInt(version, 10)
+      );
+      
+      if (!quoteVersion) {
+        res.status(404).json({
+          success: false,
+          message: `Quote version ${version} not found for supplier ${supplierId} in RFQ ${rfqId}`
+        });
+        return;
+      }
+      
+      res.status(200).json({
+        success: true,
+        message: 'Supplier quote version retrieved successfully',
+        data: quoteVersion
+      });
+    } catch (error: any) {
+      console.error('Error getting supplier quote version:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get supplier quote version',
+        error: error.message || 'Unknown error'
+      });
+    }
+  };
+
+  /**
+   * Get latest version of all supplier quote requests for an RFQ
+   */
+  getLatestSupplierQuotes = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { rfqId } = req.params;
+      
+      if (!rfqId) {
+        res.status(400).json({
+          success: false,
+          message: 'RFQ ID is required'
+        });
+        return;
+      }
+      
+      // Get the latest supplier quotes
+      const latestQuotes = await this.rfqService.getLatestSupplierQuotes(rfqId);
+      
+      res.status(200).json({
+        success: true,
+        message: 'Latest supplier quotes retrieved successfully',
+        data: latestQuotes
+      });
+    } catch (error: any) {
+      console.error('Error getting latest supplier quotes:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get latest supplier quotes',
+        error: error.message || 'Unknown error'
+      });
+    }
+  };
+
+  /**
+   * Get latest version of supplier quote request for a specific supplier
+   */
+  getLatestSupplierQuoteForSupplier = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { rfqId, supplierId } = req.params;
+      
+      if (!rfqId || !supplierId) {
+        res.status(400).json({
+          success: false,
+          message: 'RFQ ID and Supplier ID are required'
+        });
+        return;
+      }
+      
+      // Get the latest supplier quote
+      const latestQuote = await this.rfqService.getLatestSupplierQuoteForSupplier(rfqId, supplierId);
+      
+      if (!latestQuote) {
+        res.status(404).json({
+          success: false,
+          message: `No quote requests found for supplier ${supplierId} in RFQ ${rfqId}`
+        });
+        return;
+      }
+      
+      res.status(200).json({
+        success: true,
+        message: 'Latest supplier quote retrieved successfully',
+        data: latestQuote
+      });
+    } catch (error: any) {
+      console.error('Error getting latest supplier quote for supplier:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get latest supplier quote',
+        error: error.message || 'Unknown error'
+      });
+    }
+  };
 }

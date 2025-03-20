@@ -34,7 +34,7 @@ router.post('/refresh-gemini', rfqController.refreshRFQWithGemini);
 router.post('/chat-gemini', rfqController.chatWithGemini);
 
 // Add new route for executing commands on an RFX
-router.post('/execute-commands', rfqController.executeRFXCommands);
+router.post('/executed-commands', rfqController.executedRFXCommands);
 
 // Add new route for processing document through multiple Gemini endpoints
 router.post('/process-document', rfqController.processDocumentWithGemini);
@@ -61,5 +61,15 @@ router.post('/:rfqId/supplier/:supplierId/upload-excel', upload.single('file'), 
 
 // Add this route to your existing routes
 router.get('/supplier/:supplierId/download-excel/:rfqId', rfqController.downloadSupplierExcel);
+
+// Add these routes to your existing routes
+router.get('/:rfqId/supplier/:supplierId/quotes', rfqController.getSupplierQuoteHistory);
+router.get('/:rfqId/supplier/:supplierId/quotes/:version', rfqController.getSupplierQuoteVersion);
+
+// Add this route to your existing routes
+router.get('/:rfqId/supplier-quotes', rfqController.getLatestSupplierQuotes);  
+
+// Add this route to your existing routes
+router.get('/:rfqId/supplier/:supplierId/latest-quote', rfqController.getLatestSupplierQuoteForSupplier);
 
 export default router; 

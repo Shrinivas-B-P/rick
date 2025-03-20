@@ -138,7 +138,9 @@ const supplierSchema = new mongoose.Schema({
     fileName: String,
     generatedAt: Date,
     downloadUrl: String
-  }
+  },
+  invitedAt: Date,
+  latestSupplierQuoteRequestId: mongoose.Types.ObjectId
 }, { _id: false });
 
 const RFQSchema = new Schema({

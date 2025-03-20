@@ -7,6 +7,7 @@ import { RFQAnalysis, createAnalysisPayload } from "../utils/rfq.utils";
 import { ExcelService } from "./excel.service";
 import fs from 'fs';
 import mongoose from 'mongoose';
+import { SupplierQuoteRequestModel, SupplierQuoteRequestDocument } from "../models/supplier-quote-request.model";
 
 export class RFQService {
   private excelService: ExcelService;
@@ -216,7 +217,7 @@ export class RFQService {
   }
 
   /**
-   * Process supplier Excel file and extract data
+   * Process supplier Excel file and store response
    */
   async processSupplierExcel(rfqId: string, supplierId: string, fileBuffer: Buffer): Promise<any> {
     try {
@@ -229,6 +230,48 @@ export class RFQService {
       // Extract data from the Excel file buffer
       const extractedData = await this.excelService.extractDataFromExcelBuffer(fileBuffer, rfq, supplierId);
       
+      // Find the latest version number for this supplier and RFQ
+      // const latestQuoteRequest = await SupplierQuoteRequestModel.findOne(
+      //   { rfqId, supplierId },
+      //   {},
+      //   { sort: { version: -1 } }
+      // );
+      
+      // const newVersion = latestQuoteRequest ? latestQuoteRequest.version + 1 : 1;
+      
+      // // Create a new quote request document with base fields
+      // const quoteRequest = new SupplierQuoteRequestModel({
+      //   rfqId,
+      //   supplierId,
+      //   version: newVersion,
+      //   responseData: extractedData,
+      //   submittedAt: new Date(),
+      //   status: 'submitted'
+      // });
+      
+      // // Add each section directly to the root
+      // for (const [sectionId, sectionData] of Object.entries(extractedData.sections)) {
+      //   quoteRequest.set(sectionId, sectionData);
+      // }
+      
+      // // Save the document
+      // await quoteRequest.save();
+      
+      // // Update the supplier in the RFQ with the latest quote request ID
+      // await RFQModel.updateOne(
+      //   { 
+      //     _id: rfqId,
+      //     'suppliers.id': supplierId 
+      //   },
+      //   {
+      //     $set: {
+      //       'suppliers.$.latestSupplierQuoteRequestId': quoteRequest._id,
+      //       'suppliers.$.responseSubmittedAt': new Date(),
+      //       'suppliers.$.status': 'responded'
+      //     }
+      //   }
+      // );
+      
       return extractedData;
     } catch (error) {
       console.error('Error processing supplier Excel:', error);
@@ -237,55 +280,37 @@ export class RFQService {
   }
 
   /**
-   * Store supplier response data
+   * Get all quote request versions for a supplier
    */
-  async storeSupplierResponse(rfqId: string, supplierId: string, responseData: any): Promise<void> {
+  async getSupplierQuoteHistory(rfqId: string, supplierId: string): Promise<SupplierQuoteRequestDocument[]> {
     try {
-      // Update the RFQ document with the supplier's response
-      await RFQModel.updateOne(
-        { 
-          _id: rfqId,
-          'suppliers.id': supplierId 
-        },
-        {
-          $set: {
-            'suppliers.$.response': responseData,
-            'suppliers.$.responseSubmittedAt': new Date(),
-            'suppliers.$.status': 'responded'
-          }
-        }
+      // Find all quote requests for this supplier and RFQ, sorted by version
+      const quoteRequests = await SupplierQuoteRequestModel.find(
+        { rfqId, supplierId },
+        {},
+        { sort: { version: 1 } }
       );
+      
+      return quoteRequests;
     } catch (error) {
-      console.error('Error storing supplier response:', error);
+      console.error('Error getting supplier quote history:', error);
       throw error;
     }
   }
 
   /**
-   * Get Excel file for a supplier for a specific RFQ
+   * Get a specific version of a supplier's quote request
    */
-  async getSupplierExcelFile(rfqId: string, supplierId: string): Promise<string> {
+  async getSupplierQuoteVersion(rfqId: string, supplierId: string, version: number): Promise<SupplierQuoteRequestDocument | null> {
     try {
-      // Get the RFQ document
-      const rfq = await RFQModel.findById(rfqId);
-      if (!rfq) {
-        throw new Error(`RFQ with ID ${rfqId} not found`);
-      }
+      // Find the specific version
+      const quoteRequest = await SupplierQuoteRequestModel.findOne(
+        { rfqId, supplierId, version }
+      );
       
-      // Check if the supplier exists in the RFQ
-      if (!rfq.suppliers || !Array.isArray(rfq.suppliers)) {
-        throw new Error(`No suppliers found for RFQ ${rfqId}`);
-      }
-      
-      const supplier = rfq.suppliers.find(s => s.id.toString() === supplierId);
-      if (!supplier) {
-        throw new Error(`Supplier with ID ${supplierId} not found in RFQ ${rfqId}`);
-      }
-      
-      // Get the Excel file from the Excel service
-      return this.excelService.getSupplierExcelFile(rfqId, supplierId);
+      return quoteRequest;
     } catch (error) {
-      console.error('Error getting supplier Excel file:', error);
+      console.error('Error getting supplier quote version:', error);
       throw error;
     }
   }
@@ -419,4 +444,170 @@ export class RFQService {
       return { success: false, message: "Failed to update supplier status" };
     }
   }
-}
+
+  /**
+   * Get Excel file for a supplier for a specific RFQ
+   */
+  async getSupplierExcelFile(rfqId: string, supplierId: string): Promise<string> {
+    try {
+      // Get the RFQ document
+      const rfq = await RFQModel.findById(rfqId);
+      if (!rfq) {
+        throw new Error(`RFQ with ID ${rfqId} not found`);
+      }
+      
+      // Check if the supplier exists in the RFQ
+      if (!rfq.suppliers || !Array.isArray(rfq.suppliers)) {
+        throw new Error(`No suppliers found for RFQ ${rfqId}`);
+      }
+      
+      const supplier = rfq.suppliers.find(s => s.id.toString() === supplierId);
+      if (!supplier) {
+        throw new Error(`Supplier with ID ${supplierId} not found in RFQ ${rfqId}`);
+      }
+      
+      // Get the Excel file from the Excel service
+      return this.excelService.getSupplierExcelFile(rfqId, supplierId);
+    } catch (error) {
+      console.error('Error getting supplier Excel file:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get the latest quote request for a supplier
+   */
+  async getLatestSupplierQuote(rfqId: string, supplierId: string): Promise<SupplierQuoteRequestDocument | null> {
+    try {
+      // Find the latest quote request for this supplier and RFQ
+      const latestQuoteRequest = await SupplierQuoteRequestModel.findOne(
+        { rfqId, supplierId },
+        {},
+        { sort: { version: -1 } }
+      );
+      
+      return latestQuoteRequest;
+    } catch (error) {
+      console.error('Error getting latest supplier quote:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Store supplier response data (wrapper for backward compatibility)
+   */
+  async storeSupplierResponse(rfqId: string, supplierId: string, responseData: any): Promise<void> {
+    try {
+      // Find the latest version number for this supplier and RFQ
+      const latestQuoteRequest = await SupplierQuoteRequestModel.findOne(
+        { rfqId, supplierId },
+        {},
+        { sort: { version: -1 } }
+      );
+      
+      const newVersion = latestQuoteRequest ? latestQuoteRequest.version + 1 : 1;
+      
+      const sections: Record<string, any> = {};
+      for (const section of responseData.sections) {
+        sections[section.id] = section;
+        console.log({section});
+        if (section.subsections) {
+          for (const subsection of section.subsections) {
+            const tempSubsection = {...subsection, parentAccessionNumber: section.accessionNumber, parentSectionId: section.id};
+            sections[subsection.id] = tempSubsection;
+          }
+        }
+      }
+      console.log({sections});
+      // Create a new quote request document with base fields
+      const quoteRequest = new SupplierQuoteRequestModel({
+        rfqId,
+        supplierId,
+        version: newVersion,
+        responseData: responseData,
+        submittedAt: new Date(),
+        status: 'submitted'
+      });
+      
+      // Add each section directly to the root
+      for (const [sectionId, sectionData] of Object.entries(sections)) {
+        quoteRequest.set(sectionId, sectionData);
+      }
+      
+      // Save the document
+      await quoteRequest.save();
+      
+      // Update the supplier in the RFQ with the latest quote request ID
+      await RFQModel.updateOne(
+        { 
+          _id: rfqId,
+          'suppliers.id': supplierId 
+        },
+        {
+          $set: {
+            'suppliers.$.latestSupplierQuoteRequestId': quoteRequest._id,
+            'suppliers.$.responseSubmittedAt': new Date(),
+            'suppliers.$.status': 'responded'
+          }
+        }
+      );
+    } catch (error) {
+      console.error('Error storing supplier response:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get latest version of all supplier quote requests for an RFQ
+   * @param rfqId The RFQ ID
+   * @returns Array of latest supplier quote requests
+   */
+  async getLatestSupplierQuotes(rfqId: string): Promise<SupplierQuoteRequestDocument[]> {
+    try {
+      // First, get all unique supplierIds for this RFQ
+      const supplierIds = await SupplierQuoteRequestModel.distinct('supplierId', { rfqId });
+      
+      // For each supplierId, get the latest version
+      const latestQuotes: SupplierQuoteRequestDocument[] = [];
+      
+      for (const supplierId of supplierIds) {
+        const latestQuote = await SupplierQuoteRequestModel.findOne(
+          { rfqId, supplierId },
+          {},
+          { sort: { version: -1 } }
+        );
+        
+        if (latestQuote) {
+          latestQuotes.push(latestQuote);
+        }
+      }
+      
+      return latestQuotes;
+    } catch (error) {
+      console.error('Error getting latest supplier quotes:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get latest version of supplier quote request for a specific supplier in an RFQ
+   * @param rfqId The RFQ ID
+   * @param supplierId The Supplier ID
+   * @returns Latest supplier quote request or null if not found
+   */
+  async getLatestSupplierQuoteForSupplier(rfqId: string, supplierId: string): Promise<SupplierQuoteRequestDocument | null> {
+    try {
+      // Find the latest quote request for this supplier and RFQ
+      const latestQuote = await SupplierQuoteRequestModel.findOne(
+        { rfqId, supplierId },
+        {},
+        { sort: { version: -1 } }
+      );
+      
+      return latestQuote;
+    } catch (error) {
+      console.error('Error getting latest supplier quote for supplier:', error);
+      throw error;
+    }
+  }
+} 
