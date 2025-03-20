@@ -89,7 +89,8 @@ export class RFQController {
           await this.rfqService.generateAndSendExcel(
             rfq._id.toString(),
             supplier.email,
-            supplierName
+            supplierName,
+            supplier.id.toString()
           );
 
           console.log(`Excel sent successfully to ${supplier.email}`);
@@ -339,7 +340,8 @@ export class RFQController {
             await this.rfqService.generateAndSendExcel(
               rfq._id.toString(),
               supplier.email,
-              supplier.name || "Supplier"
+              supplier.name || "Supplier",
+              supplier.id.toString()
             );
 
             return {
