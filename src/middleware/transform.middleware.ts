@@ -27,7 +27,7 @@ const responseFormatter = (req: any, res: any, next: any) => {
 };
 
 /**
- * Transform data to replace _id with id
+ * Transform data to add id while keeping _id
  */
 function transformData(data: any): any {
   // Handle arrays
@@ -43,14 +43,15 @@ function transformData(data: any): any {
     // If it's a Mongoose document, convert to plain object
     const obj = data.toObject ? data.toObject() : data;
     
-    // Add id field if _id exists
+    // Add id field if _id exists, but keep _id as well
     if (obj._id) {
       result.id = obj._id.toString();
+      result._id = obj._id;
     }
     
-    // Copy all properties except _id
+    // Copy all properties
     for (const key in obj) {
-      if (key !== '_id') {
+      if (key !== '_id') { // Skip _id as we've already handled it
         // Recursively transform nested objects
         result[key] = transformData(obj[key]);
       }

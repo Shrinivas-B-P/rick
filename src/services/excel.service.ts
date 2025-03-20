@@ -59,8 +59,9 @@ export class ExcelService {
     }
     
     // Create a temporary file path
+    console.log('os.tmpdir()', os.tmpdir())
     const tempFilePath = path.join(os.tmpdir(), `rfq-${rfq._id}-${Date.now()}.xlsx`);
-    
+    console.log('tempFilePath', tempFilePath)
     // Write to file
     await workbook.xlsx.writeFile(tempFilePath);
     
@@ -188,7 +189,7 @@ export class ExcelService {
           await this.processTableInSheet(sheet, table);
         }
       }
-      
+      console.log('done222222222222222222222222222')
       // Process subsections
       if (section.subsections && Array.isArray(section.subsections) && section.subsections.length > 0) {
         // First, check if any subsections have content and create a consolidated content table
@@ -292,8 +293,14 @@ export class ExcelService {
           }
           
           // Process tables in subsection
-          if (subsection.tables && Array.isArray(subsection.tables)) {
-            this.processTables(subsection.tables, sheet, subsection.title);
+          if (subsection.tables && Array.isArray(subsection.tables) && subsection.tables.length > 0) {
+            for (const table of subsection.tables) {
+              // Skip tables not visible to suppliers
+              if (table.visibleToSupplier === false) {
+                continue;
+              }
+              await this.processTableInSheet(sheet, table);
+            }
           }
         }
       }
@@ -329,6 +336,7 @@ export class ExcelService {
         pivotTables: false
       });
     }
+    console.log('done111111111111111111111111111')
   }
   
   /**
@@ -752,15 +760,25 @@ export class ExcelService {
   /**
    * Store Excel file for a supplier
    */
-  private async storeExcelForSupplier(rfqId: string, supplierId: string, filePath: string): Promise<void> {
+  private async storeExcelForSupplier(rfqId: string, supplierId: string, filePath: string): Promise<string> {
     try {
-      // Use a consistent naming pattern
-      const fileName = `rfq-${rfqId}-supplier-${supplierId}.xlsx`;
+      // Generate a UUID for this Excel file
+      const uuid = this.generateUUID();
       
-      // Store the file
-      await this.fileStorageService.storeFile(filePath, fileName, 'excel');
+      // Create a category name for the file storage
+      const category = `excel/rfq-${rfqId}`;
       
-      console.log(`Excel file stored for supplier ${supplierId} in RFQ ${rfqId}`);
+      // Store the file with the UUID as the filename
+      const storedFile = this.fileStorageService.storeFile(
+        filePath, 
+        category, 
+        `${uuid}.xlsx`
+      );
+      
+      // Store the UUID in the RFQ document
+      await this.storeSupplierUUID(rfqId, supplierId, uuid);
+      
+      return uuid;
     } catch (error) {
       console.error('Error storing Excel file for supplier:', error);
       throw error;
@@ -1524,21 +1542,25 @@ export class ExcelService {
         console.error(`RFQ not found or has no suppliers: ${rfqId}`);
         return;
       }
-      
+      console.log(rfq.suppliers, 'rfq.suppliers before')
       // Find the supplier and update it
       const supplierIndex = rfq.suppliers.findIndex(s => s.id.toString() === supplierId);
+      console.log({supplierIndex})
       if (supplierIndex === -1) {
         console.error(`Supplier not found in RFQ: ${supplierId}`);
         return;
       }
-      
+      console.log(rfq.suppliers[supplierIndex], 'rfq.suppliers[supplierIndex]')
       // Update the supplier directly
-      rfq.suppliers[supplierIndex] = {
-        ...rfq.suppliers[supplierIndex],
-        excelUUID: uuid,
-        excelGeneratedAt: new Date()
-      };
-      
+      // rfq.suppliers[supplierIndex] = {
+      //   ...rfq.suppliers[supplierIndex],
+      //   excelUUID: uuid,
+      //   excelGeneratedAt: new Date()
+      // };
+      rfq.suppliers[supplierIndex].excelUUID = uuid;
+      rfq.suppliers[supplierIndex].excelGeneratedAt = new Date();
+      console.log(rfq.suppliers[supplierIndex], 'rfq.suppliers[supplierIndex] after')
+      console.log(rfq.suppliers, 'rfq.suppliers after')
       // Save the updated RFQ
       await rfq.save();
       

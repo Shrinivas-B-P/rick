@@ -32,63 +32,44 @@ export class FileStorageService {
       if (!fs.existsSync(this.storagePath)) {
         fs.mkdirSync(this.storagePath, { recursive: true });
       }
-      
-      // Create subdirectories for different file types
-      const subdirs = ['excel', 'attachments', 'temp'];
-      subdirs.forEach(dir => {
-        const dirPath = path.join(this.storagePath, dir);
-        if (!fs.existsSync(dirPath)) {
-          fs.mkdirSync(dirPath, { recursive: true });
-        }
-      });
     }
   }
   
   /**
    * Store a file in the storage system
-   * @param sourceFilePath Path to the source file
-   * @param fileType Type of file (excel, attachment, etc.)
-   * @param metadata Additional metadata for the file
-   * @returns File information including ID and URL
+   * @param filePath Path to the file to store
+   * @param category File category (excel, attachments, etc.)
+   * @param customFileName Optional custom file name
+   * @returns Stored file information
    */
-  async storeFile(sourceFilePath: string, fileType: string, metadata: any = {}): Promise<{
-    fileId: string;
-    fileName: string;
-    filePath: string;
-    downloadUrl: string;
-    storedAt: Date;
-  }> {
+  public storeFile(filePath: string, category: string, customFileName?: string): { fileName: string, path: string } {
     try {
-      if (this.storageType === 'local') {
-        // Generate a unique file ID
-        const fileId = uuidv4();
-        const fileExt = path.extname(sourceFilePath);
-        const originalFileName = path.basename(sourceFilePath);
-        const fileName = metadata.fileName || `${fileId}${fileExt}`;
-        
-        // Determine destination path
-        const destDir = path.join(this.storagePath, fileType);
-        const destPath = path.join(destDir, fileName);
-        
-        // Copy the file to storage
-        fs.copyFileSync(sourceFilePath, destPath);
-        
-        // Generate download URL (in a real app, this would be a proper URL)
-        const downloadUrl = `/api/files/${fileType}/${fileName}`;
-        
-        return {
-          fileId,
-          fileName,
-          filePath: destPath,
-          downloadUrl,
-          storedAt: new Date()
-        };
-      } else if (this.storageType === 's3') {
-        // Implement S3 storage here
-        throw new AppError(501, 'S3 storage not implemented yet');
-      } else {
-        throw new AppError(400, 'Unsupported storage type');
+      console.log(`Storing file from ${filePath} in category ${category}`);
+      
+      // Check if the file exists
+      if (!fs.existsSync(filePath)) {
+        console.error(`File not found: ${filePath}`);
+        throw new AppError(404, 'File not found');
       }
+      
+      // Generate a unique file name if not provided
+      const fileName = customFileName || `${uuidv4()}${path.extname(filePath)}`;
+      
+      // Get the directory path for this category
+      const dirPath = this.getStorageDirectory(category);
+      
+      // Create the full path for the stored file
+      const storedFilePath = path.join(dirPath, fileName);
+      
+      console.log(`Copying file to ${storedFilePath}`);
+      
+      // Copy the file to the storage location
+      fs.copyFileSync(filePath, storedFilePath);
+      
+      return {
+        fileName,
+        path: storedFilePath
+      };
     } catch (error) {
       console.error('Error storing file:', error);
       throw new AppError(500, 'Failed to store file');
@@ -96,33 +77,24 @@ export class FileStorageService {
   }
   
   /**
-   * Delete a file from storage
-   * @param fileId File ID or name
-   * @param fileType Type of file (excel, attachment, etc.)
+   * Retrieve a file from storage
+   * @param fileName File name
+   * @param category File category
+   * @returns Path to the file
    */
-  async deleteFile(fileId: string, fileType: string): Promise<void> {
-    try {
-      if (this.storageType === 'local') {
-        const filePath = path.join(this.storagePath, fileType, fileId);
-        
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      } else if (this.storageType === 's3') {
-        // Implement S3 deletion here
-        throw new AppError(501, 'S3 deletion not implemented yet');
-      } else {
-        throw new AppError(400, 'Unsupported storage type');
-      }
-    } catch (error) {
-      console.error('Error deleting file:', error);
-      throw error;
+  public getFilePath(fileName: string, category: string): string {
+    const filePath = path.join(this.getStorageDirectory(category), fileName);
+    
+    if (!fs.existsSync(filePath)) {
+      throw new AppError(404, `File ${fileName} not found in ${category} storage`);
     }
+    
+    return filePath;
   }
-
+  
   /**
-   * Get the storage directory for a specific category
-   * @param category The category (e.g., 'excel', 'attachment')
+   * Get the storage directory for a category
+   * @param category File category
    * @returns The path to the storage directory
    */
   private getStorageDirectory(category: string): string {
@@ -130,27 +102,10 @@ export class FileStorageService {
     
     // Ensure the directory exists
     if (!fs.existsSync(dirPath)) {
+      console.log(`Creating directory: ${dirPath}`);
       fs.mkdirSync(dirPath, { recursive: true });
     }
     
     return dirPath;
-  }
-
-  /**
-   * Get the path to a stored file
-   * @param fileName File name
-   * @param category File category (excel, attachments, etc.)
-   * @returns Path to the file
-   */
-  getFilePath(fileName: string, category: string): string {
-    // Construct the path to the file
-    const filePath = path.join(this.getStorageDirectory(category), fileName);
-    
-    // Check if the file exists
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`File ${fileName} not found in ${category} storage`);
-    }
-    
-    return filePath;
   }
 } 
