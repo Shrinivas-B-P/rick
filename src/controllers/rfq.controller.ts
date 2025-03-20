@@ -135,7 +135,9 @@ export class RFQController {
 
   getById = async (req: Request, res: Response) => {
     try {
+      console.log('controller called with id', req.params.id);
       const rfq = await this.rfqService.findById(req.params.id);
+      console.log('controller response', rfq);
       res.json(rfq);
     } catch (error: any) {
       res.status(error.statusCode || 500).json({ error: error.message });
