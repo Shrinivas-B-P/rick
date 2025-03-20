@@ -100,4 +100,6 @@ router.get(
   rfqController.getSupplierQuotesForAnalysis
 );
 
+router.post("/:id/negotiate", rfqController.negotiateRFQ);
+
 export default router;

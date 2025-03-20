@@ -1,12 +1,12 @@
-import { Document, Types } from 'mongoose';
-import mongoose from 'mongoose';
+import { Document, Types } from "mongoose";
+import mongoose from "mongoose";
 
 export interface GeneralDetails {
   id: string;
   title: string;
   description?: string;
   dueDate: Date;
-  status: 'draft' | 'published' | 'closed';
+  status: "draft" | "published" | "closed";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -61,7 +61,7 @@ export interface Supplier {
   phone?: string;
   address?: string;
   contactPerson?: string;
-  status?: 'pending' | 'invited' | 'responded' | 'selected' | 'rejected';
+  status?: "pending" | "invited" | "responded" | "selected" | "rejected";
   response?: any;
   responseSubmittedAt?: Date;
   excelUUID?: string;
@@ -88,4 +88,23 @@ export interface RFQDocument extends mongoose.Document, RFQ {
   createdBy?: string | mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
-} 
+}
+
+export interface NegotiationResponse {
+  supplierId: number;
+  products: Array<{
+    productId: string;
+    negotiation?: any;
+  }>;
+  commercialTerms: Array<{
+    key: string;
+    negotiation?: any;
+  }>;
+  questionnaires: Array<{
+    key: string;
+    questions: Array<{
+      key: string;
+      negotiation?: any;
+    }>;
+  }>;
+}

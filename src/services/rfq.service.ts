@@ -1,5 +1,5 @@
 import { RFQModel } from "../models/rfq.model";
-import { RFQDocument, Supplier } from "../types/rfq";
+import { NegotiationResponse, RFQDocument, Supplier } from "../types/rfq";
 import { AppError } from "../middleware/error";
 import { sendInvitationEmail } from "../services/email.service";
 import { Document, Types } from "mongoose";
@@ -118,6 +118,7 @@ export class RFQService {
       if (!rfq) {
         return null;
       }
+      console.log("rfq", rfq);
       return rfq as RFQDocument & { _id: mongoose.Types.ObjectId };
     } catch (error) {
       console.error("Error finding RFQ by ID:", error);
@@ -717,6 +718,107 @@ export class RFQService {
       return latestQuote;
     } catch (error) {
       console.error("Error getting latest supplier quote for supplier:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Negotiate an RFQ
+   */
+
+  async negotiateRFQ(
+    rfqId: string,
+    {
+      negotiationResponse,
+      supplierNegotiationResponses,
+      negotiationType,
+      numberOfRounds,
+      negotiationStyle,
+      commercialTermsOrder,
+    }: {
+      negotiationResponse: NegotiationResponse;
+      supplierNegotiationResponses: Array<NegotiationResponse>;
+      negotiationType: string;
+      numberOfRounds: number;
+      negotiationStyle: string;
+      commercialTermsOrder: string[];
+    }
+  ): Promise<RFQDocument> {
+    try {
+      // Find the RFQ document
+      const rfq = await RFQModel.findById(rfqId);
+
+      if (!rfq) {
+        throw new Error(`RFQ with ID ${rfqId} not found`);
+      }
+
+      // Create negotiation record in the RFQ
+      rfq.updatedAt = new Date();
+      rfq.negotiationType = negotiationType;
+      rfq.numberOfRounds = numberOfRounds;
+      rfq.negotiationStyle = negotiationStyle;
+
+      if (rfq.commercialTermsTable) {
+        rfq.commercialTermsTable.tables[0].data = commercialTermsOrder.map(
+          (termId) =>
+            rfq.commercialTermsTable.tables[0].data.find(
+              (term: any) => term.id === termId
+            )
+        );
+      }
+
+      if (rfq.commercialTable) {
+        negotiationResponse.products.forEach((product) => {
+          rfq.commercialTable.tables[0].data.find(
+            (row: any) => row.id === product.productId
+          ).negotiation = product.negotiation;
+        });
+      }
+      if (rfq.commercialTermsTable) {
+        negotiationResponse.commercialTerms.forEach((commercialTerm) => {
+          rfq.commercialTermsTable.tables[0].data.find(
+            (row: any) => row.id === commercialTerm.key
+          ).negotiation = commercialTerm.negotiation;
+        });
+      }
+      if (rfq.questionnaire) {
+        negotiationResponse.questionnaires.forEach((questionnaire) => {
+          questionnaire.questions.forEach((question) => {
+            const section = rfq.questionnaire.subsections.find(
+              (section: any) => section.id === questionnaire.key
+            );
+
+            if (section?.tables?.[0]?.data) {
+              const row = section.tables[0].data.find(
+                (row: any) => row.id === question.key
+              );
+              if (row) {
+                row.negotiation = question.negotiation;
+              }
+            }
+          });
+        });
+      }
+
+      // // Update supplier statuses to "negotiating"
+      // if (rfq.suppliers && rfq.suppliers.length > 0) {
+      //   for (const supplierResponse of negotiationResponses) {
+      //     const supplierIndex = rfq.suppliers.findIndex(
+      //       (s) => s.id.toString() === supplierResponse.supplierId.toString()
+      //     );
+
+      //     // if (supplierIndex !== -1) {
+      //     //   rfq.suppliers[supplierIndex].status = "negotiating";
+      //     // }
+      //   }
+      // }
+
+      // Save the RFQ
+      await rfq.save();
+
+      return rfq;
+    } catch (error) {
+      console.error("Error negotiating RFQ:", error);
       throw error;
     }
   }

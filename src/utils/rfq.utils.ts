@@ -60,6 +60,7 @@ export const createAnalysisPayload = (
       description: item.description,
       quantity: Number(item.qty),
       unit: item.uom,
+      negotiation: item.negotiation,
     })),
     questionnaires: rfq.questionnaire.subsections.map((questionnaire: any) => ({
       id: questionnaire.id,
@@ -70,6 +71,7 @@ export const createAnalysisPayload = (
       id: term.id,
       term: term.term,
       description: term.description,
+      negotiation: term.negotiation,
     })),
   };
 };

@@ -1412,4 +1412,65 @@ export class RFQController {
       });
     }
   };
+
+  /**
+   * Negotiate an RFQ
+   */
+  negotiateRFQ = async (req: Request, res: Response): Promise<void> => {
+    try {
+      console.log("req.body", req, req.params, req.body);
+      const { id: rfqId } = req.params;
+
+      if (!rfqId) {
+        res.status(400).json({
+          success: false,
+          message: "RFQ ID is required",
+        });
+        return;
+      }
+
+      console.log("req.body", req.body);
+      const {
+        negotiationResponse,
+        supplierNegotiationResponses,
+        negotiationType,
+        numberOfRounds,
+        negotiationStyle,
+        commercialTermsOrder,
+      } = req.body;
+
+      if (!negotiationType || !numberOfRounds || !negotiationStyle) {
+        res.status(400).json({
+          success: false,
+          message:
+            "Negotiation type, number of rounds, and negotiation style are required",
+        });
+        return;
+      }
+
+      const negotiatedRFQ = await this.rfqService.negotiateRFQ(rfqId, {
+        negotiationResponse,
+        supplierNegotiationResponses,
+        negotiationType,
+        numberOfRounds,
+        negotiationStyle,
+        commercialTermsOrder,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "RFQ negotiated successfully",
+        data: negotiatedRFQ,
+      });
+    } catch (error: any) {
+      console.error("Error negotiating RFQ:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to negotiate RFQ",
+        error: error.message || "Unknown error",
+      });
+    }
+  };
 }
+
+export default new RFQController();
