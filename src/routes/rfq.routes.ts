@@ -95,4 +95,9 @@ router.get(
   rfqController.getLatestSupplierQuoteForSupplier
 );
 
+router.get(
+  "/:rfqId/supplier-quotes-for-analysis",
+  rfqController.getSupplierQuotesForAnalysis
+);
+
 export default router;

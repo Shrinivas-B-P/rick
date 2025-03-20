@@ -135,9 +135,7 @@ export class RFQController {
 
   getById = async (req: Request, res: Response) => {
     try {
-      console.log('controller called with id', req.params.id);
       const rfq = await this.rfqService.findById(req.params.id);
-      console.log('controller response', rfq);
       res.json(rfq);
     } catch (error: any) {
       res.status(error.statusCode || 500).json({ error: error.message });
@@ -1372,6 +1370,42 @@ export class RFQController {
       res.status(500).json({
         success: false,
         message: "Failed to get latest supplier quote",
+        error: error.message || "Unknown error",
+      });
+    }
+  };
+
+  /**
+   * Get supplier quotes for analysis
+   */
+  getSupplierQuotesForAnalysis = async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const { rfqId } = req.params;
+
+      if (!rfqId) {
+        res.status(400).json({
+          success: false,
+          message: "RFQ ID is required",
+        });
+        return;
+      }
+
+      const supplierQuotesForAnalysis =
+        await this.rfqService.getSupplierQuotesForAnalysis(rfqId);
+
+      res.status(200).json({
+        success: true,
+        message: "Supplier quotes for analysis retrieved successfully",
+        data: supplierQuotesForAnalysis,
+      });
+    } catch (error: any) {
+      console.error("Error getting supplier quotes for analysis:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to get supplier quotes for analysis",
         error: error.message || "Unknown error",
       });
     }

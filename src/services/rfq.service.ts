@@ -3,7 +3,12 @@ import { RFQDocument, Supplier } from "../types/rfq";
 import { AppError } from "../middleware/error";
 import { sendInvitationEmail } from "../services/email.service";
 import { Document, Types } from "mongoose";
-import { RFQAnalysis, createAnalysisPayload } from "../utils/rfq.utils";
+import {
+  RFQAnalysis,
+  SupplierQuoteAnalysis,
+  createAnalysisPayload,
+  createSupplierQuotesForAnalysis,
+} from "../utils/rfq.utils";
 import { ExcelService } from "./excel.service";
 import fs from "fs";
 import mongoose from "mongoose";
@@ -110,7 +115,6 @@ export class RFQService {
   ): Promise<(RFQDocument & { _id: mongoose.Types.ObjectId }) | null> => {
     try {
       const rfq = await RFQModel.findById(id);
-      console.log('service response', rfq);
       if (!rfq) {
         return null;
       }
@@ -673,6 +677,21 @@ export class RFQService {
       }
 
       return latestQuotes;
+    } catch (error) {
+      console.error("Error getting latest supplier quotes:", error);
+      throw error;
+    }
+  }
+
+  async getSupplierQuotesForAnalysis(
+    rfqId: string
+  ): Promise<SupplierQuoteAnalysis[]> {
+    try {
+      // First, get all unique supplierIds for this RFQ
+      const latestQuotes = await this.getLatestSupplierQuotes(rfqId);
+      const supplierQuotesForAnalysis =
+        createSupplierQuotesForAnalysis(latestQuotes);
+      return supplierQuotesForAnalysis;
     } catch (error) {
       console.error("Error getting latest supplier quotes:", error);
       throw error;

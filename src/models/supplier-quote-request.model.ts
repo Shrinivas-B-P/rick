@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document } from "mongoose";
 
 export interface SupplierQuoteRequestDocument extends Document {
   rfqId: mongoose.Types.ObjectId;
@@ -6,7 +6,7 @@ export interface SupplierQuoteRequestDocument extends Document {
   version: number;
   responseData: any;
   submittedAt: Date;
-  status: 'draft' | 'submitted' | 'accepted' | 'rejected';
+  status: "draft" | "submitted" | "accepted" | "rejected";
   notes?: string;
   attachments?: Array<{
     name: string;
@@ -17,13 +17,16 @@ export interface SupplierQuoteRequestDocument extends Document {
   createdAt: Date;
   updatedAt: Date;
   sectionsMap: any;
+  commercialTable: any;
+  commercialTermsTable: any;
+  questionnaire: any;
 }
 
 const SupplierQuoteRequestSchema = new Schema(
   {
     rfqId: {
       type: Schema.Types.ObjectId,
-      ref: 'RFQ',
+      ref: "RFQ",
       required: true,
     },
     supplierId: {
@@ -44,8 +47,8 @@ const SupplierQuoteRequestSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['draft', 'submitted', 'accepted', 'rejected'],
-      default: 'submitted',
+      enum: ["draft", "submitted", "accepted", "rejected"],
+      default: "submitted",
     },
     notes: {
       type: String,
@@ -68,14 +71,15 @@ const SupplierQuoteRequestSchema = new Schema(
   },
   {
     timestamps: true,
-    strict: false // this has to be false to allow for dynamic sections data.
+    strict: false, // this has to be false to allow for dynamic sections data.
   }
 );
 
 // Create a compound index for rfqId and supplierId
 SupplierQuoteRequestSchema.index({ rfqId: 1, supplierId: 1 });
 
-export const SupplierQuoteRequestModel = mongoose.model<SupplierQuoteRequestDocument>(
-  'SupplierQuoteRequest',
-  SupplierQuoteRequestSchema
-); 
+export const SupplierQuoteRequestModel =
+  mongoose.model<SupplierQuoteRequestDocument>(
+    "SupplierQuoteRequest",
+    SupplierQuoteRequestSchema
+  );
