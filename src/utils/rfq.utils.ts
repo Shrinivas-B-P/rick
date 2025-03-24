@@ -35,6 +35,7 @@ export interface SupplierQuoteAnalysis {
   supplierId: string;
   items: Record<string, string>[];
   questionnaires: Questionnaire[];
+  commercialTerms: Record<string, string>[];
 }
 
 export const createAnalysisPayload = (
@@ -60,7 +61,7 @@ export const createAnalysisPayload = (
       description: item.description,
       quantity: Number(item.qty),
       unit: item.uom,
-      negotiation: item.negotiation,
+      target: item.target,
     })),
     questionnaires: rfq.questionnaire.subsections.map((questionnaire: any) => ({
       id: questionnaire.id,
@@ -71,7 +72,7 @@ export const createAnalysisPayload = (
       id: term.id,
       term: term.term,
       description: term.description,
-      negotiation: term.negotiation,
+      target: term.target,
     })),
   };
 };
@@ -110,4 +111,84 @@ export const createSupplierQuotesForAnalysis = (
     };
   });
   return supplierQuotesForAnalysis;
+};
+
+export const getLowestQuotedValueForEachItem = (
+  supplierQuotes: SupplierQuoteRequestDocument[]
+) => {
+  // Group all items by their id
+  const itemsById: Record<string, Array<Record<string, any>>> = {};
+
+  supplierQuotes.forEach((quote) => {
+    quote.commercialTable?.tables[0]?.data.forEach(
+      (item: Record<string, string>) => {
+        const unitPrice = item["unit-price"];
+        if (unitPrice !== undefined && unitPrice !== null && unitPrice !== "") {
+          if (!itemsById[item.id]) {
+            itemsById[item.id] = [];
+          }
+
+          itemsById[item.id].push({
+            id: item.id,
+            baseLine: Number(unitPrice),
+            supplierId: quote.supplierId,
+          });
+        }
+      }
+    );
+    quote.commercialTermsTable?.tables[0]?.data.forEach(
+      (term: Record<string, string>) => {
+        if (!itemsById[term.id]) {
+          itemsById[term.id] = [];
+        }
+      }
+    );
+    quote.questionnaire.subsections.forEach((subsection: any) => {
+      subsection.tables[0]?.data.forEach((question: any) => {
+        if (!itemsById[question.id]) {
+          itemsById[question.id] = [];
+        }
+      });
+    });
+  });
+
+  // Find the item with lowest price for each id
+  const lowestQuotedValueForEachItem = Object.values(itemsById).map((items) => {
+    return items.reduce((lowest, current) => {
+      return current.baseLine < lowest.baseLine ? current : lowest;
+    }, items[0]);
+  });
+
+  const lowestQuotedValueForEachCommercialTerm =
+    supplierQuotes[0].commercialTermsTable?.tables[0]?.data.map(
+      (term: Record<string, string>) => ({
+        id: term.id,
+        baseLine: term["user-response"],
+        supplierId: supplierQuotes[0].supplierId,
+      })
+    );
+
+  const lowestQuotedValueForEachQuestionnaire =
+    supplierQuotes[0].questionnaire.subsections.reduce(
+      (retObj: Record<string, any>, subsection: any) => {
+        retObj[subsection.id] = {
+          id: subsection.id,
+          questions: subsection.tables[0]?.data.map((question: any) => ({
+            id: question.id,
+            baseLine: question.response,
+            supplierId: supplierQuotes[0].supplierId,
+          })),
+        };
+        return retObj;
+      },
+      {}
+    );
+
+  const lowestQuotes = {
+    items: lowestQuotedValueForEachItem,
+    commercialTerms: lowestQuotedValueForEachCommercialTerm,
+    questionnaires: lowestQuotedValueForEachQuestionnaire,
+  };
+
+  return lowestQuotes;
 };

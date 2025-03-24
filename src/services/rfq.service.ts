@@ -8,6 +8,7 @@ import {
   SupplierQuoteAnalysis,
   createAnalysisPayload,
   createSupplierQuotesForAnalysis,
+  getLowestQuotedValueForEachItem,
 } from "../utils/rfq.utils";
 import { ExcelService } from "./excel.service";
 import fs from "fs";
@@ -682,15 +683,20 @@ export class RFQService {
     }
   }
 
-  async getSupplierQuotesForAnalysis(
-    rfqId: string
-  ): Promise<SupplierQuoteAnalysis[]> {
+  async getSupplierQuotesForAnalysis(rfqId: string): Promise<{
+    sqrs: SupplierQuoteAnalysis[];
+    lowestQuotes: any;
+  }> {
     try {
       // First, get all unique supplierIds for this RFQ
       const latestQuotes = await this.getLatestSupplierQuotes(rfqId);
       const supplierQuotesForAnalysis =
         createSupplierQuotesForAnalysis(latestQuotes);
-      return supplierQuotesForAnalysis;
+      const lowestQuotes = getLowestQuotedValueForEachItem(latestQuotes);
+      return {
+        sqrs: supplierQuotesForAnalysis,
+        lowestQuotes,
+      };
     } catch (error) {
       console.error("Error getting latest supplier quotes:", error);
       throw error;
@@ -769,16 +775,22 @@ export class RFQService {
 
       if (rfq.commercialTable) {
         negotiationResponse.products.forEach((product) => {
-          rfq.commercialTable.tables[0].data.find(
+          const row = rfq.commercialTable.tables[0].data.find(
             (row: any) => row.id === product.productId
-          ).negotiation = product.negotiation;
+          );
+          if (row) {
+            row.target = product.negotiation;
+          }
         });
       }
       if (rfq.commercialTermsTable) {
         negotiationResponse.commercialTerms.forEach((commercialTerm) => {
-          rfq.commercialTermsTable.tables[0].data.find(
+          const row = rfq.commercialTermsTable.tables[0].data.find(
             (row: any) => row.id === commercialTerm.key
-          ).negotiation = commercialTerm.negotiation;
+          );
+          if (row) {
+            row.target = commercialTerm.negotiation;
+          }
         });
       }
       if (rfq.questionnaire) {
@@ -793,27 +805,42 @@ export class RFQService {
                 (row: any) => row.id === question.key
               );
               if (row) {
-                row.negotiation = question.negotiation;
+                row.target = question.negotiation;
               }
             }
           });
         });
       }
 
-      // // Update supplier statuses to "negotiating"
-      // if (rfq.suppliers && rfq.suppliers.length > 0) {
-      //   for (const supplierResponse of negotiationResponses) {
-      //     const supplierIndex = rfq.suppliers.findIndex(
-      //       (s) => s.id.toString() === supplierResponse.supplierId.toString()
-      //     );
+      // Process supplier negotiation responses if provided
+      // if (
+      //   supplierNegotiationResponses &&
+      //   supplierNegotiationResponses.length > 0
+      // ) {
+      //   // Update supplier statuses to "negotiating"
+      //   if (rfq.suppliers && rfq.suppliers.length > 0) {
+      //     for (const supplierResponse of supplierNegotiationResponses) {
+      //       if (supplierResponse.supplierId) {
+      //         const supplierIndex = rfq.suppliers.findIndex(
+      //           (s) =>
+      //             s.id.toString() === supplierResponse.supplierId.toString()
+      //         );
 
-      //     // if (supplierIndex !== -1) {
-      //     //   rfq.suppliers[supplierIndex].status = "negotiating";
-      //     // }
+      //         if (supplierIndex !== -1) {
+      //           rfq.suppliers[supplierIndex].status = "negotiating";
+      //           // You might want to store supplier responses here as well
+      //         }
+      //       }
+      //     }
       //   }
       // }
 
-      // Save the RFQ
+      // Use markModified to ensure Mongoose detects changes to nested objects
+      if (rfq.commercialTable) rfq.markModified("commercialTable");
+      if (rfq.commercialTermsTable) rfq.markModified("commercialTermsTable");
+      if (rfq.questionnaire) rfq.markModified("questionnaire");
+      if (rfq.suppliers) rfq.markModified("suppliers");
+
       await rfq.save();
 
       return rfq;
