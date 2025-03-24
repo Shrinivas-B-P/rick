@@ -36,6 +36,7 @@ export interface SupplierQuoteAnalysis {
   items: Record<string, string>[];
   questionnaires: Questionnaire[];
   commercialTerms: Record<string, string>[];
+  evaluationResponse: any;
 }
 
 export const createAnalysisPayload = (
@@ -108,6 +109,7 @@ export const createSupplierQuotesForAnalysis = (
         description: term.description,
         response: term["user-response"],
       })),
+      evaluationResponse: quote.evaluationResponse,
     };
   });
   return supplierQuotesForAnalysis;

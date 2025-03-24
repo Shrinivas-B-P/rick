@@ -1,5 +1,11 @@
 import { RFQModel } from "../models/rfq.model";
-import { NegotiationResponse, RFQDocument, Supplier } from "../types/rfq";
+import {
+  EvaluatedQuestionnaireData,
+  NegotiationResponse,
+  NegotiationSummary,
+  RFQDocument,
+  Supplier,
+} from "../types/rfq";
 import { AppError } from "../middleware/error";
 import { sendInvitationEmail } from "../services/email.service";
 import { Document, Types } from "mongoose";
@@ -17,6 +23,7 @@ import {
   SupplierQuoteRequestModel,
   SupplierQuoteRequestDocument,
 } from "../models/supplier-quote-request.model";
+import { getFromUltron } from "../utils/common.utils";
 
 export class RFQService {
   private excelService: ExcelService;
@@ -119,7 +126,6 @@ export class RFQService {
       if (!rfq) {
         return null;
       }
-      console.log("rfq", rfq);
       return rfq as RFQDocument & { _id: mongoose.Types.ObjectId };
     } catch (error) {
       console.error("Error finding RFQ by ID:", error);
@@ -595,7 +601,6 @@ export class RFQService {
       const sections: Record<string, any> = {};
       for (const section of responseData.sections) {
         sections[section.id] = section;
-        console.log({ section });
         if (section.subsections) {
           for (const subsection of section.subsections) {
             const tempSubsection = {
@@ -607,7 +612,6 @@ export class RFQService {
           }
         }
       }
-      console.log({ sections });
       // Create a new quote request document with base fields
       const quoteRequest = new SupplierQuoteRequestModel({
         rfqId,
@@ -693,6 +697,13 @@ export class RFQService {
       const supplierQuotesForAnalysis =
         createSupplierQuotesForAnalysis(latestQuotes);
       const lowestQuotes = getLowestQuotedValueForEachItem(latestQuotes);
+
+      // TODO: Temp: Uncomment this when we have to populate evaluation response from Ultron. Later change to create sqr function.
+      // await this.updateSupplierQuoteRequestsWithEvaluationResponse(
+      //   supplierQuotesForAnalysis,
+      //   lowestQuotes
+      // );
+
       return {
         sqrs: supplierQuotesForAnalysis,
         lowestQuotes,
@@ -700,6 +711,59 @@ export class RFQService {
     } catch (error) {
       console.error("Error getting latest supplier quotes:", error);
       throw error;
+    }
+  }
+
+  async updateSupplierQuoteRequestsWithEvaluationResponse(
+    supplierQuotesForAnalysis: SupplierQuoteAnalysis[],
+    lowestQuotes: any
+  ) {
+    for (const quote of supplierQuotesForAnalysis) {
+      const commercialTerms: any[] = [];
+      quote.commercialTerms.forEach((commercialTerm) => {
+        commercialTerms.push({
+          id: commercialTerm.id,
+          name: commercialTerm.term,
+          supplierFinalQuote: commercialTerm.response,
+        });
+        const lowestQuote = lowestQuotes.commercialTerms.find(
+          (q: any) => q.id === commercialTerm.id
+        );
+        if (lowestQuote) {
+          commercialTerms.find(
+            (ct: any) => ct.id === commercialTerm.id
+          ).baseLine = lowestQuote.baseLine;
+        }
+      });
+      const questionnaireEvaluationMap: Record<string, any> = {};
+      for (const questionnaire of quote.questionnaires) {
+        const questionnairePayload = {
+          sourceLanguage: "English",
+          enrichedRequest: {},
+          questionnaireResponse: questionnaire.questions.map((question) => ({
+            id: question.id,
+            question: question.question,
+            response: question.response,
+          })),
+        };
+        const questionnaireEvaluationResponse =
+          await this.evaluateQuestionnaire(questionnairePayload);
+        questionnaireEvaluationMap[questionnaire.id] =
+          questionnaireEvaluationResponse;
+      }
+      const commercialTermsEvaluationResponse =
+        await this.evaluateCommercialTerms(commercialTerms);
+      await this.updateSupplierQuoteRequestWithEvaluationResponse(
+        quote.id,
+        commercialTermsEvaluationResponse.responseGrade,
+        Object.entries(questionnaireEvaluationMap).reduce(
+          (acc: any, [key, value]) => {
+            acc[key] = value.responseGrade;
+            return acc;
+          },
+          {}
+        )
+      );
     }
   }
 
@@ -846,6 +910,112 @@ export class RFQService {
       return rfq;
     } catch (error) {
       console.error("Error negotiating RFQ:", error);
+      throw error;
+    }
+  }
+
+  async evaluateCommercialTerms(commercialTerms: any): Promise<any> {
+    try {
+      const negotiationSummary: NegotiationSummary = {
+        commercialTermsOfferFromSuppliers: {},
+      };
+
+      const negotiationSummaryKeyMap: Record<string, string> = {};
+
+      commercialTerms.forEach((term: any, index: number) => {
+        const key = `term${index + 1}`;
+        negotiationSummary.commercialTermsOfferFromSuppliers[key] = {
+          name: term.name,
+          baseline: term.baseLine,
+          supplierFinalQuote: term.supplierFinalQuote,
+        };
+        negotiationSummaryKeyMap[key] = term.id;
+      });
+
+      const response = await getFromUltron(
+        "general/evaluate-commercial-term-response",
+        negotiationSummary
+      );
+
+      const responseData = {
+        ...response.data,
+        responseGrade: Object.entries(response.data.responseGrade).reduce(
+          (acc: any, [key, { grade, name, reason }]: any) => {
+            // Ensure grade is converted to a number
+            // Use parseFloat instead of Number to better handle decimal values
+            acc[negotiationSummaryKeyMap[key]] = {
+              grade: parseFloat(grade) || 0, // Fallback to 0 if conversion fails
+              name,
+              reason,
+            };
+            return acc;
+          },
+          {}
+        ),
+      };
+
+      return responseData;
+    } catch (error) {
+      console.error("Error evaluating commercial terms:", error);
+      throw error;
+    }
+  }
+
+  async evaluateQuestionnaire(questionnaire: any): Promise<any> {
+    try {
+      const questionnairePayload: EvaluatedQuestionnaireData = {
+        sourceLanguage: questionnaire.sourceLanguage,
+        enrichedRequest: questionnaire.enrichedRequest,
+        questionnaireResponse: questionnaire.questionnaireResponse,
+      };
+
+      const evaluatedQuestionnaireData = await getFromUltron(
+        "general/evaluate-questionnaire-response",
+        questionnairePayload
+      );
+      const responseData = {
+        ...evaluatedQuestionnaireData.data,
+        responseGrade: Object.entries(
+          evaluatedQuestionnaireData.data.responseGrade
+        ).reduce((acc: any, [key, { id, grade, reason }]: any) => {
+          acc[id] = {
+            id,
+            grade: parseFloat(grade) || 0,
+            reason,
+          };
+          return acc;
+        }, {}),
+      };
+      return responseData;
+    } catch (error) {
+      console.error("Error evaluating questionnaire:", error);
+      throw error;
+    }
+  }
+
+  async updateSupplierQuoteRequestWithEvaluationResponse(
+    sqrId: string,
+    evaluationResponse: any,
+    questionnaireEvaluationMap: Record<string, any>
+  ) {
+    try {
+      const sqr = await SupplierQuoteRequestModel.findById(sqrId);
+      if (!sqr) {
+        throw new Error(`Supplier quote request with ID ${sqrId} not found`);
+      }
+
+      sqr.evaluationResponse = {
+        ...sqr.evaluationResponse,
+        commercialTerms: evaluationResponse,
+        questionnaires: questionnaireEvaluationMap,
+      };
+      sqr.markModified("evaluationResponse");
+      await sqr.save();
+    } catch (error) {
+      console.error(
+        "Error updating supplier quote request with evaluation response:",
+        error
+      );
       throw error;
     }
   }

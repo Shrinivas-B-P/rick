@@ -20,6 +20,7 @@ export interface SupplierQuoteRequestDocument extends Document {
   commercialTable: any;
   commercialTermsTable: any;
   questionnaire: any;
+  evaluationResponse: any;
 }
 
 const SupplierQuoteRequestSchema = new Schema(
@@ -65,6 +66,10 @@ const SupplierQuoteRequestSchema = new Schema(
       },
     ],
     sectionsMap: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
+    evaluationResponse: {
       type: Schema.Types.Mixed,
       default: {},
     },
