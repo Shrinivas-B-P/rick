@@ -102,4 +102,6 @@ router.get(
 
 router.post("/:id/negotiate", rfqController.negotiateRFQ);
 
+router.post("/:id/award", rfqController.awardRFQ);
+
 export default router;

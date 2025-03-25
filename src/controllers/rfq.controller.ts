@@ -1418,7 +1418,6 @@ export class RFQController {
    */
   negotiateRFQ = async (req: Request, res: Response): Promise<void> => {
     try {
-      console.log("req.body", req, req.params, req.body);
       const { id: rfqId } = req.params;
 
       if (!rfqId) {
@@ -1429,7 +1428,6 @@ export class RFQController {
         return;
       }
 
-      console.log("req.body", req.body);
       const {
         negotiationResponse,
         supplierNegotiationResponses,
@@ -1467,6 +1465,35 @@ export class RFQController {
       res.status(500).json({
         success: false,
         message: "Failed to negotiate RFQ",
+        error: error.message || "Unknown error",
+      });
+    }
+  };
+
+  awardRFQ = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id: rfqId } = req.params;
+
+      if (!rfqId) {
+        res.status(400).json({
+          success: false,
+          message: "RFQ ID is required",
+        });
+        return;
+      }
+
+      const awardedRFQ = await this.rfqService.awardRFQ(rfqId, req.body);
+
+      res.status(200).json({
+        success: true,
+        message: "RFQ awarded successfully",
+        data: awardedRFQ,
+      });
+    } catch (error: any) {
+      console.error("Error awarding RFQ:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to award RFQ",
         error: error.message || "Unknown error",
       });
     }

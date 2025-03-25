@@ -95,6 +95,7 @@ export const createSupplierQuotesForAnalysis = (
         quantity: Number(item.qty),
         unit: item.uom,
         price: Number(item["unit-price"]),
+        allocatedQuantity: Number(item.allocatedQuantity),
       })),
       questionnaires: quote.questionnaire.subsections.map(
         (questionnaire: any) => ({
@@ -154,6 +155,24 @@ export const getLowestQuotedValueForEachItem = (
     });
   });
 
+  // Find the lowest and highest baseline for each item id
+  const itemsWithLowestAndHighest: Record<
+    string,
+    { lowest: Record<string, any>; highest: Record<string, any> }
+  > = {};
+
+  Object.entries(itemsById).forEach(([itemId, items]) => {
+    if (items.length > 0) {
+      // Sort items by baseline
+      const sortedItems = [...items].sort((a, b) => a.baseLine - b.baseLine);
+
+      itemsWithLowestAndHighest[itemId] = {
+        lowest: sortedItems[0],
+        highest: sortedItems[sortedItems.length - 1],
+      };
+    }
+  });
+
   // Find the item with lowest price for each id
   const lowestQuotedValueForEachItem = Object.values(itemsById).map((items) => {
     return items.reduce((lowest, current) => {
@@ -190,6 +209,7 @@ export const getLowestQuotedValueForEachItem = (
     items: lowestQuotedValueForEachItem,
     commercialTerms: lowestQuotedValueForEachCommercialTerm,
     questionnaires: lowestQuotedValueForEachQuestionnaire,
+    itemsWithLowestAndHighest: itemsWithLowestAndHighest,
   };
 
   return lowestQuotes;

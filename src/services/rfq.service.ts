@@ -1019,4 +1019,37 @@ export class RFQService {
       throw error;
     }
   }
+
+  async awardRFQ(rfqId: string, awardData: any): Promise<RFQDocument> {
+    try {
+      const rfq = await RFQModel.findById(rfqId);
+      if (!rfq) {
+        throw new Error(`RFQ with ID ${rfqId} not found`);
+      }
+      const updatedSqrs = [];
+      for (const award of awardData) {
+        const sqr = await SupplierQuoteRequestModel.findById(
+          award.supplierQuoteRequestId
+        );
+        if (!sqr) {
+          throw new Error(
+            `Supplier quote request with ID ${award.supplierQuoteRequestId} not found`
+          );
+        }
+        for (const item of award.items) {
+          const sqrItem = sqr.commercialTable.tables[0].data.find(
+            (i: any) => i.id === item.productId
+          );
+          sqrItem.allocatedQuantity = item.quantity;
+        }
+        if (sqr.commercialTable) sqr.markModified("commercialTable");
+        await sqr.save();
+        updatedSqrs.push(sqr);
+      }
+      return rfq;
+    } catch (error) {
+      console.error("Error awarding RFQ:", error);
+      throw error;
+    }
+  }
 }
