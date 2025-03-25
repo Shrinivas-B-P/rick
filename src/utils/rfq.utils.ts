@@ -35,6 +35,8 @@ export interface SupplierQuoteAnalysis {
   supplierId: string;
   items: Record<string, string>[];
   questionnaires: Questionnaire[];
+  commercialTerms: Record<string, string>[];
+  evaluationResponse: any;
 }
 
 export const createAnalysisPayload = (
@@ -60,7 +62,7 @@ export const createAnalysisPayload = (
       description: item.description,
       quantity: Number(item.qty),
       unit: item.uom,
-      negotiation: item.negotiation,
+      target: item.target,
     })),
     questionnaires: rfq.questionnaire.subsections.map((questionnaire: any) => ({
       id: questionnaire.id,
@@ -71,43 +73,136 @@ export const createAnalysisPayload = (
       id: term.id,
       term: term.term,
       description: term.description,
-      negotiation: term.negotiation,
+      target: term.target,
     })),
+  };
+};
+
+export const createSupplierQuoteForAnalysis = (
+  supplierQuote: SupplierQuoteRequestDocument
+): SupplierQuoteAnalysis => {
+  const items = supplierQuote.commercialTable?.tables[0]?.data;
+  const commercialTerms = supplierQuote.commercialTermsTable?.tables[0]?.data;
+
+  return {
+    id: supplierQuote._id.toString(),
+    supplierId: supplierQuote.supplierId,
+    items: items.map((item: Record<string, string>) => ({
+      id: item.id,
+      type: item.type,
+      product: item.item,
+      description: item.description,
+      quantity: Number(item.qty),
+      unit: item.uom,
+      price: Number(item["unit-price"]),
+      allocatedQuantity: Number(item.allocatedQuantity),
+    })),
+    questionnaires: supplierQuote.questionnaire.subsections.map(
+      (questionnaire: any) => ({
+        id: questionnaire.id,
+        title: questionnaire.title,
+        questions: questionnaire.tables[0]?.data || [],
+      })
+    ),
+    commercialTerms: commercialTerms.map((term: Record<string, string>) => ({
+      id: term.id,
+      term: term.term,
+      description: term.description,
+      response: term["user-response"],
+    })),
+    evaluationResponse: supplierQuote.evaluationResponse,
   };
 };
 
 export const createSupplierQuotesForAnalysis = (
   supplierQuotes: SupplierQuoteRequestDocument[]
 ): SupplierQuoteAnalysis[] => {
-  const supplierQuotesForAnalysis = supplierQuotes.map((quote) => {
-    const items = quote.commercialTable?.tables[0]?.data;
-    const commercialTerms = quote.commercialTermsTable?.tables[0]?.data;
-    return {
-      id: quote._id.toString(),
-      supplierId: quote.supplierId,
-      items: items.map((item: Record<string, string>) => ({
-        id: item.id,
-        type: item.type,
-        product: item.item,
-        description: item.description,
-        quantity: Number(item.qty),
-        unit: item.uom,
-        price: Number(item["unit-price"]),
-      })),
-      questionnaires: quote.questionnaire.subsections.map(
-        (questionnaire: any) => ({
-          id: questionnaire.id,
-          title: questionnaire.title,
-          questions: questionnaire.tables[0]?.data || [],
-        })
-      ),
-      commercialTerms: commercialTerms.map((term: Record<string, string>) => ({
-        id: term.id,
-        term: term.term,
-        description: term.description,
-        response: term["user-response"],
-      })),
-    };
-  });
+  const supplierQuotesForAnalysis = supplierQuotes.map(
+    createSupplierQuoteForAnalysis
+  );
   return supplierQuotesForAnalysis;
+};
+
+export const getLowestQuotedValueForEachItem = (
+  supplierQuotes: SupplierQuoteRequestDocument[]
+) => {
+  // Group all items by their id
+  const itemsById: Record<string, Array<Record<string, any>>> = {};
+
+  supplierQuotes.forEach((quote) => {
+    const items = quote.commercialTable?.tables[0]?.data;
+    items.forEach((item: Record<string, string>) => {
+      const unitPrice = item["unit-price"];
+      if (unitPrice !== undefined && unitPrice !== null && unitPrice !== "") {
+        if (!itemsById[item.id]) {
+          itemsById[item.id] = [];
+        }
+
+        itemsById[item.id].push({
+          id: item.id,
+          baseLine: Number(unitPrice),
+          supplierId: quote.supplierId,
+        });
+      }
+    });
+  });
+
+  // Find the lowest and highest baseline for each item id
+  const itemsWithLowestAndHighest: Record<
+    string,
+    { lowest: Record<string, any>; highest: Record<string, any> }
+  > = {};
+
+  Object.entries(itemsById).forEach(([itemId, items]) => {
+    if (items.length > 0) {
+      // Sort items by baseline
+      const sortedItems = [...items].sort((a, b) => a.baseLine - b.baseLine);
+
+      itemsWithLowestAndHighest[itemId] = {
+        lowest: sortedItems[0],
+        highest: sortedItems[sortedItems.length - 1],
+      };
+    }
+  });
+
+  // Find the item with lowest price for each id
+  const lowestQuotedValueForEachItem = Object.values(itemsById).map((items) => {
+    return items.reduce((lowest, current) => {
+      return current.baseLine < lowest.baseLine ? current : lowest;
+    }, items[0]);
+  });
+
+  const lowestQuotedValueForEachCommercialTerm =
+    supplierQuotes[0].commercialTermsTable?.tables[0]?.data.map(
+      (term: Record<string, string>) => ({
+        id: term.id,
+        baseLine: term["user-response"],
+        supplierId: supplierQuotes[0].supplierId,
+      })
+    );
+
+  const lowestQuotedValueForEachQuestionnaire =
+    supplierQuotes[0].questionnaire.subsections.reduce(
+      (retObj: Record<string, any>, subsection: any) => {
+        retObj[subsection.id] = {
+          id: subsection.id,
+          questions: subsection.tables[0]?.data.map((question: any) => ({
+            id: question.id,
+            baseLine: question.response,
+            supplierId: supplierQuotes[0].supplierId,
+          })),
+        };
+        return retObj;
+      },
+      {}
+    );
+
+  const lowestQuotes = {
+    items: lowestQuotedValueForEachItem,
+    commercialTerms: lowestQuotedValueForEachCommercialTerm,
+    questionnaires: lowestQuotedValueForEachQuestionnaire,
+    itemsWithLowestAndHighest: itemsWithLowestAndHighest,
+  };
+
+  return lowestQuotes;
 };

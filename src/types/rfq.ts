@@ -82,6 +82,7 @@ export interface RFQ {
   suppliers?: Supplier[];
   attachments?: any[];
   [key: string]: any; // Allow any additional properties
+  evaluationResponse?: any;
 }
 
 export interface RFQDocument extends mongoose.Document, RFQ {
@@ -107,4 +108,37 @@ export interface NegotiationResponse {
       negotiation?: any;
     }>;
   }>;
+}
+
+interface CommercialTermOffer {
+  name: string;
+  baseline: string;
+  supplierFinalQuote: string;
+}
+
+interface CommercialTermsOfferFromSuppliers {
+  [termId: string]: CommercialTermOffer;
+}
+
+export interface NegotiationSummary {
+  commercialTermsOfferFromSuppliers: CommercialTermsOfferFromSuppliers;
+}
+
+interface QuestionnaireResponseItem {
+  question: string;
+  response: string;
+}
+
+// Define the type for the enriched request (placeholder since you mentioned "entire output of enrichment")
+interface EnrichedRequest {
+  // This would contain all the fields from the enrichment output
+  // Since the exact structure wasn't provided, I'm using a generic type
+  [key: string]: any;
+}
+
+// Define the main type for the entire structure
+export interface EvaluatedQuestionnaireData {
+  sourceLanguage: string;
+  enrichedRequest: EnrichedRequest;
+  questionnaireResponse: QuestionnaireResponseItem[];
 }
