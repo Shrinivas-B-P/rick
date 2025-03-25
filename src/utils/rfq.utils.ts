@@ -78,41 +78,48 @@ export const createAnalysisPayload = (
   };
 };
 
+export const createSupplierQuoteForAnalysis = (
+  supplierQuote: SupplierQuoteRequestDocument
+): SupplierQuoteAnalysis => {
+  const items = supplierQuote.commercialTable?.tables[0]?.data;
+  const commercialTerms = supplierQuote.commercialTermsTable?.tables[0]?.data;
+
+  return {
+    id: supplierQuote._id.toString(),
+    supplierId: supplierQuote.supplierId,
+    items: items.map((item: Record<string, string>) => ({
+      id: item.id,
+      type: item.type,
+      product: item.item,
+      description: item.description,
+      quantity: Number(item.qty),
+      unit: item.uom,
+      price: Number(item["unit-price"]),
+      allocatedQuantity: Number(item.allocatedQuantity),
+    })),
+    questionnaires: supplierQuote.questionnaire.subsections.map(
+      (questionnaire: any) => ({
+        id: questionnaire.id,
+        title: questionnaire.title,
+        questions: questionnaire.tables[0]?.data || [],
+      })
+    ),
+    commercialTerms: commercialTerms.map((term: Record<string, string>) => ({
+      id: term.id,
+      term: term.term,
+      description: term.description,
+      response: term["user-response"],
+    })),
+    evaluationResponse: supplierQuote.evaluationResponse,
+  };
+};
+
 export const createSupplierQuotesForAnalysis = (
   supplierQuotes: SupplierQuoteRequestDocument[]
 ): SupplierQuoteAnalysis[] => {
-  const supplierQuotesForAnalysis = supplierQuotes.map((quote) => {
-    const items = quote.commercialTable?.tables[0]?.data;
-    const commercialTerms = quote.commercialTermsTable?.tables[0]?.data;
-    return {
-      id: quote._id.toString(),
-      supplierId: quote.supplierId,
-      items: items.map((item: Record<string, string>) => ({
-        id: item.id,
-        type: item.type,
-        product: item.item,
-        description: item.description,
-        quantity: Number(item.qty),
-        unit: item.uom,
-        price: Number(item["unit-price"]),
-        allocatedQuantity: Number(item.allocatedQuantity),
-      })),
-      questionnaires: quote.questionnaire.subsections.map(
-        (questionnaire: any) => ({
-          id: questionnaire.id,
-          title: questionnaire.title,
-          questions: questionnaire.tables[0]?.data || [],
-        })
-      ),
-      commercialTerms: commercialTerms.map((term: Record<string, string>) => ({
-        id: term.id,
-        term: term.term,
-        description: term.description,
-        response: term["user-response"],
-      })),
-      evaluationResponse: quote.evaluationResponse,
-    };
-  });
+  const supplierQuotesForAnalysis = supplierQuotes.map(
+    createSupplierQuoteForAnalysis
+  );
   return supplierQuotesForAnalysis;
 };
 
@@ -123,35 +130,20 @@ export const getLowestQuotedValueForEachItem = (
   const itemsById: Record<string, Array<Record<string, any>>> = {};
 
   supplierQuotes.forEach((quote) => {
-    quote.commercialTable?.tables[0]?.data.forEach(
-      (item: Record<string, string>) => {
-        const unitPrice = item["unit-price"];
-        if (unitPrice !== undefined && unitPrice !== null && unitPrice !== "") {
-          if (!itemsById[item.id]) {
-            itemsById[item.id] = [];
-          }
+    const items = quote.commercialTable?.tables[0]?.data;
+    items.forEach((item: Record<string, string>) => {
+      const unitPrice = item["unit-price"];
+      if (unitPrice !== undefined && unitPrice !== null && unitPrice !== "") {
+        if (!itemsById[item.id]) {
+          itemsById[item.id] = [];
+        }
 
-          itemsById[item.id].push({
-            id: item.id,
-            baseLine: Number(unitPrice),
-            supplierId: quote.supplierId,
-          });
-        }
+        itemsById[item.id].push({
+          id: item.id,
+          baseLine: Number(unitPrice),
+          supplierId: quote.supplierId,
+        });
       }
-    );
-    quote.commercialTermsTable?.tables[0]?.data.forEach(
-      (term: Record<string, string>) => {
-        if (!itemsById[term.id]) {
-          itemsById[term.id] = [];
-        }
-      }
-    );
-    quote.questionnaire.subsections.forEach((subsection: any) => {
-      subsection.tables[0]?.data.forEach((question: any) => {
-        if (!itemsById[question.id]) {
-          itemsById[question.id] = [];
-        }
-      });
     });
   });
 

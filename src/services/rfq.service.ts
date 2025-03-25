@@ -13,6 +13,7 @@ import {
   RFQAnalysis,
   SupplierQuoteAnalysis,
   createAnalysisPayload,
+  createSupplierQuoteForAnalysis,
   createSupplierQuotesForAnalysis,
   getLowestQuotedValueForEachItem,
 } from "../utils/rfq.utils";
@@ -612,7 +613,8 @@ export class RFQService {
           }
         }
       }
-      // Create a new quote request document with base fields
+      // Create a new quote request document with base field
+
       const quoteRequest = new SupplierQuoteRequestModel({
         rfqId,
         supplierId,
@@ -620,15 +622,30 @@ export class RFQService {
         responseData: responseData,
         submittedAt: new Date(),
         status: "submitted",
+        ...sections,
       });
-
-      // Add each section directly to the root
-      for (const [sectionId, sectionData] of Object.entries(sections)) {
-        quoteRequest.set(sectionId, sectionData);
-      }
 
       // Save the document
       await quoteRequest.save();
+
+      // TODO: Temp: Uncomment this when we have to populate evaluation response from Ultron. Later change to create sqr function.
+      const latestQuotes = await this.getLatestSupplierQuotes(rfqId);
+      const lowestQuotes = getLowestQuotedValueForEachItem(latestQuotes);
+
+      const supplierQuote = createSupplierQuoteForAnalysis(quoteRequest);
+      const {
+        supplierQuoteRequestId,
+        commercialEvaluationGrades,
+        questionnaireEvaluationGrades,
+      } = await this.createEvaluationResponsePayload(
+        supplierQuote,
+        lowestQuotes
+      );
+      await this.updateSupplierQuoteRequestWithEvaluationResponse({
+        supplierQuoteRequestId,
+        commercialEvaluationGrades,
+        questionnaireEvaluationGrades,
+      });
 
       // Update the supplier in the RFQ with the latest quote request ID
       await RFQModel.updateOne(
@@ -697,7 +714,6 @@ export class RFQService {
       const supplierQuotesForAnalysis =
         createSupplierQuotesForAnalysis(latestQuotes);
       const lowestQuotes = getLowestQuotedValueForEachItem(latestQuotes);
-
       // TODO: Temp: Uncomment this when we have to populate evaluation response from Ultron. Later change to create sqr function.
       // await this.updateSupplierQuoteRequestsWithEvaluationResponse(
       //   supplierQuotesForAnalysis,
@@ -714,58 +730,162 @@ export class RFQService {
     }
   }
 
-  async updateSupplierQuoteRequestsWithEvaluationResponse(
-    supplierQuotesForAnalysis: SupplierQuoteAnalysis[],
+  async createEvaluationResponsePayload(
+    supplierQuote: SupplierQuoteAnalysis,
     lowestQuotes: any
   ) {
-    for (const quote of supplierQuotesForAnalysis) {
-      const commercialTerms: any[] = [];
-      quote.commercialTerms.forEach((commercialTerm) => {
-        commercialTerms.push({
-          id: commercialTerm.id,
-          name: commercialTerm.term,
-          supplierFinalQuote: commercialTerm.response,
-        });
-        const lowestQuote = lowestQuotes.commercialTerms.find(
-          (q: any) => q.id === commercialTerm.id
-        );
-        if (lowestQuote) {
-          commercialTerms.find(
-            (ct: any) => ct.id === commercialTerm.id
-          ).baseLine = lowestQuote.baseLine;
-        }
+    const commercialTerms: any[] = [];
+    supplierQuote.commercialTerms.forEach((commercialTerm) => {
+      commercialTerms.push({
+        id: commercialTerm.id,
+        name: commercialTerm.term,
+        supplierFinalQuote: commercialTerm.response,
       });
-      const questionnaireEvaluationMap: Record<string, any> = {};
-      for (const questionnaire of quote.questionnaires) {
-        const questionnairePayload = {
-          sourceLanguage: "English",
-          enrichedRequest: {},
-          questionnaireResponse: questionnaire.questions.map((question) => ({
-            id: question.id,
-            question: question.question,
-            response: question.response,
-          })),
-        };
-        const questionnaireEvaluationResponse =
-          await this.evaluateQuestionnaire(questionnairePayload);
-        questionnaireEvaluationMap[questionnaire.id] =
-          questionnaireEvaluationResponse;
-      }
-      const commercialTermsEvaluationResponse =
-        await this.evaluateCommercialTerms(commercialTerms);
-      await this.updateSupplierQuoteRequestWithEvaluationResponse(
-        quote.id,
-        commercialTermsEvaluationResponse.responseGrade,
-        Object.entries(questionnaireEvaluationMap).reduce(
-          (acc: any, [key, value]) => {
-            acc[key] = value.responseGrade;
-            return acc;
-          },
-          {}
-        )
+      const lowestQuote = lowestQuotes.commercialTerms.find(
+        (q: any) => q.id === commercialTerm.id
       );
+      if (lowestQuote) {
+        commercialTerms.find(
+          (ct: any) => ct.id === commercialTerm.id
+        ).baseLine = lowestQuote.baseLine;
+      }
+    });
+    const questionnaireEvaluationMap: Record<string, any> = {};
+    for (const questionnaire of supplierQuote.questionnaires) {
+      const questionnairePayload = {
+        sourceLanguage: "English",
+        enrichedRequest: {},
+        questionnaireResponse: questionnaire.questions.map((question) => ({
+          id: question.id,
+          question: question.question,
+          response: question.response,
+        })),
+      };
+      const questionnaireEvaluationResponse = await this.evaluateQuestionnaire(
+        questionnairePayload
+      );
+      questionnaireEvaluationMap[questionnaire.id] =
+        questionnaireEvaluationResponse;
     }
+    const commercialTermsEvaluationResponse =
+      await this.evaluateCommercialTerms(commercialTerms);
+    const evaluationResponsePayload = {
+      supplierQuoteRequestId: supplierQuote.id,
+      commercialEvaluationGrades:
+        commercialTermsEvaluationResponse.responseGrade,
+      questionnaireEvaluationGrades: Object.entries(
+        questionnaireEvaluationMap
+      ).reduce((acc: any, [key, value]) => {
+        acc[key] = value.responseGrade;
+        return acc;
+      }, {}),
+    };
+    return evaluationResponsePayload;
   }
+
+  // async updateSupplierQuoteRequestWithEvaluationResponse(
+  //   sqrId: string,
+  //   evaluationResponse: any
+  // ) {
+  //   const commercialTerms: any[] = [];
+  //     quote.commercialTerms.forEach((commercialTerm) => {
+  //       commercialTerms.push({
+  //         id: commercialTerm.id,
+  //         name: commercialTerm.term,
+  //         supplierFinalQuote: commercialTerm.response,
+  //       });
+  //       const lowestQuote = lowestQuotes.commercialTerms.find(
+  //         (q: any) => q.id === commercialTerm.id
+  //       );
+  //       if (lowestQuote) {
+  //         commercialTerms.find(
+  //           (ct: any) => ct.id === commercialTerm.id
+  //         ).baseLine = lowestQuote.baseLine;
+  //       }
+  //     });
+  //     const questionnaireEvaluationMap: Record<string, any> = {};
+  //     for (const questionnaire of quote.questionnaires) {
+  //       const questionnairePayload = {
+  //         sourceLanguage: "English",
+  //         enrichedRequest: {},
+  //         questionnaireResponse: questionnaire.questions.map((question) => ({
+  //           id: question.id,
+  //           question: question.question,
+  //           response: question.response,
+  //         })),
+  //       };
+  //       const questionnaireEvaluationResponse =
+  //         await this.evaluateQuestionnaire(questionnairePayload);
+  //       questionnaireEvaluationMap[questionnaire.id] =
+  //         questionnaireEvaluationResponse;
+  //     }
+  //     const commercialTermsEvaluationResponse =
+  //       await this.evaluateCommercialTerms(commercialTerms);
+  //     await this.updateSupplierQuoteRequestWithEvaluationResponse(
+  //       quote.id,
+  //       commercialTermsEvaluationResponse.responseGrade,
+  //       Object.entries(questionnaireEvaluationMap).reduce(
+  //         (acc: any, [key, value]) => {
+  //           acc[key] = value.responseGrade;
+  //           return acc;
+  //         },
+  //         {}
+  //       )
+  //     );
+  // }
+
+  // async updateSupplierQuoteRequestsWithEvaluationResponse(
+  //   supplierQuotesForAnalysis: SupplierQuoteAnalysis[],
+  //   lowestQuotes: any
+  // ) {
+  //   for (const quote of supplierQuotesForAnalysis) {
+  //     const commercialTerms: any[] = [];
+  //     quote.commercialTerms.forEach((commercialTerm) => {
+  //       commercialTerms.push({
+  //         id: commercialTerm.id,
+  //         name: commercialTerm.term,
+  //         supplierFinalQuote: commercialTerm.response,
+  //       });
+  //       const lowestQuote = lowestQuotes.commercialTerms.find(
+  //         (q: any) => q.id === commercialTerm.id
+  //       );
+  //       if (lowestQuote) {
+  //         commercialTerms.find(
+  //           (ct: any) => ct.id === commercialTerm.id
+  //         ).baseLine = lowestQuote.baseLine;
+  //       }
+  //     });
+  //     const questionnaireEvaluationMap: Record<string, any> = {};
+  //     for (const questionnaire of quote.questionnaires) {
+  //       const questionnairePayload = {
+  //         sourceLanguage: "English",
+  //         enrichedRequest: {},
+  //         questionnaireResponse: questionnaire.questions.map((question) => ({
+  //           id: question.id,
+  //           question: question.question,
+  //           response: question.response,
+  //         })),
+  //       };
+  //       const questionnaireEvaluationResponse =
+  //         await this.evaluateQuestionnaire(questionnairePayload);
+  //       questionnaireEvaluationMap[questionnaire.id] =
+  //         questionnaireEvaluationResponse;
+  //     }
+  //     const commercialTermsEvaluationResponse =
+  //       await this.evaluateCommercialTerms(commercialTerms);
+  //     await this.updateSupplierQuoteRequestWithEvaluationResponse(
+  //       quote.id,
+  //       commercialTermsEvaluationResponse.responseGrade,
+  //       Object.entries(questionnaireEvaluationMap).reduce(
+  //         (acc: any, [key, value]) => {
+  //           acc[key] = value.responseGrade;
+  //           return acc;
+  //         },
+  //         {}
+  //       )
+  //     );
+  //   }
+  // }
 
   /**
    * Get latest version of supplier quote request for a specific supplier in an RFQ
@@ -993,21 +1113,29 @@ export class RFQService {
     }
   }
 
-  async updateSupplierQuoteRequestWithEvaluationResponse(
-    sqrId: string,
-    evaluationResponse: any,
-    questionnaireEvaluationMap: Record<string, any>
-  ) {
+  async updateSupplierQuoteRequestWithEvaluationResponse({
+    supplierQuoteRequestId,
+    commercialEvaluationGrades,
+    questionnaireEvaluationGrades,
+  }: {
+    supplierQuoteRequestId: string;
+    commercialEvaluationGrades: Record<string, any>;
+    questionnaireEvaluationGrades: Record<string, any>;
+  }) {
     try {
-      const sqr = await SupplierQuoteRequestModel.findById(sqrId);
+      const sqr = await SupplierQuoteRequestModel.findById(
+        supplierQuoteRequestId
+      );
       if (!sqr) {
-        throw new Error(`Supplier quote request with ID ${sqrId} not found`);
+        throw new Error(
+          `Supplier quote request with ID ${supplierQuoteRequestId} not found`
+        );
       }
 
       sqr.evaluationResponse = {
         ...sqr.evaluationResponse,
-        commercialTerms: evaluationResponse,
-        questionnaires: questionnaireEvaluationMap,
+        commercialTerms: commercialEvaluationGrades,
+        questionnaires: questionnaireEvaluationGrades,
       };
       sqr.markModified("evaluationResponse");
       await sqr.save();
