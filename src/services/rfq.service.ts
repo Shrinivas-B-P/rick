@@ -129,7 +129,6 @@ export class RFQService {
       }
       return rfq as RFQDocument & { _id: mongoose.Types.ObjectId };
     } catch (error) {
-      console.error("Error finding RFQ by ID:", error);
       return null;
     }
   };
@@ -613,8 +612,7 @@ export class RFQService {
           }
         }
       }
-      // Create a new quote request document with base field
-
+      // Create a new quote request document with base fields
       const quoteRequest = new SupplierQuoteRequestModel({
         rfqId,
         supplierId,

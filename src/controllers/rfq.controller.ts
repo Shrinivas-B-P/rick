@@ -114,7 +114,6 @@ export class RFQController {
     req: Request,
     res: Response
   ): Promise<void> => {
-    console.log("req.body", req.body);
     this.sendExcelToSuppliers(req.body).catch((error) => {
       console.error("Error sending Excel to suppliers:", error);
     });
@@ -426,10 +425,6 @@ export class RFQController {
   ): Promise<void> => {
     try {
       // Debug the request
-      console.log("Headers:", req.headers);
-      console.log("Content-Type:", req.headers["content-type"]);
-      console.log("Raw body:", req.body);
-
       const { lastFiveUserTexts, currentText, rfxId } = req.body || {};
 
       // Validate required fields
@@ -567,16 +562,19 @@ export class RFQController {
       const formData = new FormData();
 
       // Convert commands array to a string with the specific format
-      let commandsString;
+      let commandsString: string = '';
       if (Array.isArray(commands)) {
         // If it's an array, stringify it
-        commandsString = JSON.stringify(commands);
+        commands.forEach((command) => {
+          commandsString += `${JSON.stringify(command)};`;
+        });
       } else {
         // If it's a single command, wrap it in an array and stringify
         commandsString = JSON.stringify([commands]);
       }
-
+      
       // Add the commands and rfxId to the form data
+      console.log("commandsString", commandsString);
       formData.append("commands", commandsString);
       formData.append("rfxId", rfxId);
 
@@ -616,7 +614,6 @@ export class RFQController {
   ): Promise<void> => {
     try {
       const { rfxId, files } = req.body;
-      console.log("req.body", req.body);
 
       if (!rfxId || !files) {
         res.status(400).json({

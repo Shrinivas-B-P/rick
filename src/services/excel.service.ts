@@ -34,7 +34,7 @@ export class ExcelService {
     const titleRow = instructionsSheet.addRow(['How to Complete This RFQ Response']);
     titleRow.font = { bold: true, size: 14 };
     titleRow.height = 24;
-    
+    console.log('generateRFQExcel')
     // Add instructions content
     instructionsSheet.addRow([]);
     instructionsSheet.addRow(['This Excel file contains the details of the Request for Quotation (RFQ).']);
@@ -46,13 +46,13 @@ export class ExcelService {
     instructionsSheet.addRow(['4. Submit your response before the deadline.']);
     
     // Add Supplier sheet with details and UUID
-    console.log('supplierId', supplierId)
     if (supplierId) {
       await this.addSupplierSheet(workbook, rfq, supplierId.toString());
     }
     
     // If using template structure, generate sheets based on that
     if (templateStructure) {
+      console.log('generateSheetsFromTemplate')
       await this.generateSheetsFromTemplate(workbook, templateStructure);
     } else {
       // Otherwise use the RFQ document structure
@@ -60,9 +60,7 @@ export class ExcelService {
     }
     
     // Create a temporary file path
-    console.log('os.tmpdir()', os.tmpdir())
     const tempFilePath = path.join(os.tmpdir(), `rfq-${rfq._id}-${supplierId}.xlsx`);
-    console.log('tempFilePath', tempFilePath)
     // Write to file
     await workbook.xlsx.writeFile(tempFilePath);
     
@@ -78,6 +76,7 @@ export class ExcelService {
    * Generate Excel sheets from template structure
    */
   private async generateSheetsFromTemplate(workbook: ExcelJS.Workbook, templateStructure: any): Promise<void> {
+    console.log('generateSheetsFromTemplate')
     // Check if templateStructure and sections exist
     if (!templateStructure || !templateStructure.sections || !Array.isArray(templateStructure.sections)) {
       console.warn('Template structure is missing or has no sections array');
@@ -354,7 +353,6 @@ export class ExcelService {
       const visibleColumns = table.columns.filter((col: any) => col.visibleToSupplier !== false);
       
       if (visibleColumns.length === 0) {
-        console.log('No visible columns for table:', table.title || 'Untitled Table');
         return;
       }
       
@@ -443,6 +441,7 @@ export class ExcelService {
                   break;
                 }
               }
+              console.log("value", value);
               return value !== undefined ? value : '';
             }
             
@@ -664,6 +663,7 @@ export class ExcelService {
    * Generate Excel sheets from RFQ document
    */
   private async generateSheetsFromRFQ(workbook: ExcelJS.Workbook, rfq: RFQDocument): Promise<void> {
+    console.log('generateSheetsFromRFQ')
     // Create General Details sheet
     const generalSheet = workbook.addWorksheet('General Details');
     generalSheet.columns = [
