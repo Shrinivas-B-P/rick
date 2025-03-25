@@ -118,10 +118,8 @@ export class RFQService {
       if (!rfq) {
         return null;
       }
-      console.log("rfq", rfq);
       return rfq as RFQDocument & { _id: mongoose.Types.ObjectId };
     } catch (error) {
-      console.error("Error finding RFQ by ID:", error);
       return null;
     }
   };
@@ -594,7 +592,6 @@ export class RFQService {
       const sections: Record<string, any> = {};
       for (const section of responseData.sections) {
         sections[section.id] = section;
-        console.log({ section });
         if (section.subsections) {
           for (const subsection of section.subsections) {
             const tempSubsection = {
@@ -606,7 +603,6 @@ export class RFQService {
           }
         }
       }
-      console.log({ sections });
       // Create a new quote request document with base fields
       const quoteRequest = new SupplierQuoteRequestModel({
         rfqId,
