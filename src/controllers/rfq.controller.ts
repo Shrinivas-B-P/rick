@@ -8,6 +8,9 @@ import { RFQService } from "../services/rfq.service";
 import FormData from "form-data";
 import { AppError } from "../middleware/error";
 import fs from "fs";
+import http from "http";
+import https from "https";
+
 export class RFQController {
   private rfqService: RFQService;
 
@@ -614,6 +617,7 @@ export class RFQController {
   ): Promise<void> => {
     try {
       const { rfxId, files } = req.body;
+      console.log("req.body", req.body);
 
       if (!rfxId || !files) {
         res.status(400).json({
@@ -722,95 +726,23 @@ export class RFQController {
         "aerchain_kb_rfx_doc_read_9_gemini",
       ];
 
-      // Process each endpoint sequentially
+      // Process endpoints in batches of 3
+      const batchSize = 5;
       const results = [];
-      for (let i = 0; i < endpoints.length; i++) {
-        const endpoint = endpoints[i];
-        try {
-          console.log(`Processing endpoint: ${endpoint}`);
-
-          // Send progress update
-          res.write(
-            JSON.stringify({
-              success: true,
-              status: "processing",
-              message: `Processing endpoint ${i + 1}/${
-                endpoints.length
-              }: ${endpoint}`,
-              progress: 5 + (i / endpoints.length) * 90, // 5% for prep, 90% for processing
-              timestamp: new Date().toISOString(),
-            })
-          );
-
-          // Create a new FormData for each request
-          const formData = new FormData();
-          formData.append("rfxId", rfxId);
-
-          // Append the file as a Buffer with filename
-          formData.append("file", fileBuffer, {
-            filename: fileName,
-            contentType: fileType,
-          });
-
-          // Make the request to the Gemini service
-          const response = await axios.post(
-            `http://54.149.112.106:80/${endpoint}`,
-            formData,
-            {
-              headers: {
-                ...formData.getHeaders(),
-              },
-            }
-          );
-
-          // Create a safe result object
-          const result = {
-            endpoint,
-            status: "success",
-            data: response.data,
-          };
-
-          results.push(result);
-
-          // Send the result for this endpoint
-          res.write(
-            JSON.stringify({
-              status: "data",
-              chunk: response.data.toString(),
-            })
-          );
-        } catch (error: any) {
-          console.error(`Error processing endpoint ${endpoint}:`, error);
-
-          // Create a safe error object without circular references
-          const safeError = {
-            message: error.message || "Unknown error",
-            status: error.response?.status,
-            data: error.response?.data,
-          };
-
-          const result = {
-            endpoint,
-            status: "error",
-            error: safeError,
-          };
-
-          results.push(result);
-
-          // Send the error for this endpoint
-          res.write(
-            JSON.stringify({
-              success: true, // Keep success true to continue processing
-              status: "processing",
-              message: `Error in endpoint ${i + 1}/${
-                endpoints.length
-              }: ${endpoint}`,
-              progress: 5 + ((i + 1) / endpoints.length) * 90,
-              error: safeError,
-              timestamp: new Date().toISOString(),
-            })
-          );
-        }
+      
+      for (let i = 0; i < endpoints.length; i += batchSize) {
+        const batch = endpoints.slice(i, i + batchSize);
+        console.log(`Processing batch ${i/batchSize + 1} with ${batch.length} endpoints`);
+        
+        // Create batch of promises
+        const batchPromises = batch.map((endpoint, batchIndex) => {
+          const index = i + batchIndex;
+          return this.processEndpoint(endpoint, index, endpoints.length, rfxId, fileBuffer, fileName, fileType, res);
+        });
+        
+        // Process this batch concurrently
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
       }
 
       // Send final completion message
@@ -818,10 +750,9 @@ export class RFQController {
         JSON.stringify({
           success: true,
           status: "data",
-          chunk:
-            "Document processing completed, your template is ready to be used",
+          chunk: "Document processing completed, your template is ready to be used",
           progress: 100,
-          results,
+          results: results.map(r => ({ endpoint: r.endpoint, status: r.status })),
           timestamp: new Date().toISOString(),
         })
       );
@@ -838,36 +769,121 @@ export class RFQController {
       res.end();
     } catch (error: any) {
       console.error("Error processing document with Gemini:", error);
-
-      // Create a safe error response
-      const safeError = {
-        message: error.message || "Unknown error",
-      };
-
-      // If headers haven't been sent yet, send a regular JSON response
-      if (!res.headersSent) {
-        res.status(500).json({
+      
+      // Send error message
+      res.write(
+        JSON.stringify({
           success: false,
           status: "error",
-          message: "Failed to process document with Gemini",
-          error: safeError,
-        });
-      } else {
-        // Otherwise, send an error event and end the stream
-        res.write(
-          JSON.stringify({
-            success: false,
-            status: "error",
-            message: "Failed to process document with Gemini",
-            error: safeError,
-            timestamp: new Date().toISOString(),
-          })
-        );
-        res.end();
-      }
+          message: error.message || "An error occurred during document processing",
+          timestamp: new Date().toISOString(),
+        })
+      );
+      
+      res.end();
     }
   };
 
+  /**
+   * Helper function to process a single endpoint
+   */
+  private processEndpoint = async (
+    endpoint: string, 
+    index: number, 
+    totalEndpoints: number,
+    rfxId: string,
+    fileBuffer: Buffer,
+    fileName: string,
+    fileType: string,
+    res: Response
+  ) => {
+    try {
+      console.log(`Starting endpoint: ${endpoint}`);
+      
+      // Create a new FormData for this request
+      const formData = new FormData();
+      formData.append("rfxId", rfxId);
+      
+      // Append the file as a Buffer with filename
+      formData.append("file", fileBuffer, {
+        filename: fileName,
+        contentType: fileType,
+      });
+      
+      // Make the request to the Gemini service
+      const response = await axios.post(
+        `http://54.149.112.106:80/${endpoint}`,
+        formData,
+        {
+          headers: {
+            ...formData.getHeaders(),
+          },
+          // Add keep-alive settings
+          httpAgent: new http.Agent({ keepAlive: true }),
+          httpsAgent: new https.Agent({ keepAlive: true }),
+          timeout: 300000, // 5 minutes timeout
+        }
+      );
+      
+      console.log(`Completed endpoint: ${endpoint}`);
+      
+      // Send progress update for this endpoint
+      res.write(
+        JSON.stringify({
+          success: true,
+          status: "processing",
+          message: `Completed endpoint ${index + 1}/${totalEndpoints}: ${endpoint}`,
+          progress: 5 + ((index + 1) / totalEndpoints) * 90,
+          timestamp: new Date().toISOString(),
+        })
+      );
+      
+      // Send the result for this endpoint
+      res.write(
+        JSON.stringify({
+          status: "data",
+          chunk: response.data,
+        })
+      );
+      
+      return {
+        endpoint,
+        status: "success",
+        data: response.data,
+      };
+    } catch (error: any) {
+      console.error(`Error processing endpoint ${endpoint}:`, error);
+      
+      // Create a safe error object without circular references
+      const safeError = {
+        message: error.message || "Unknown error",
+        status: error.response?.status,
+        data: error.response?.data,
+      };
+      
+      // Send the error for this endpoint
+      res.write(
+        JSON.stringify({
+          success: true, // Keep success true to continue processing
+          status: "processing",
+          message: `Error in endpoint ${index + 1}/${totalEndpoints}: ${endpoint}`,
+          progress: 5 + ((index + 1) / totalEndpoints) * 90,
+          error: safeError,
+          timestamp: new Date().toISOString(),
+        })
+      );
+      
+      return {
+        endpoint,
+        status: "error",
+        error: safeError,
+      };
+    }
+  };
+
+  /**
+   * Generate email with Gemini
+   */
   public generateEmailWithGemini = async (
     req: Request,
     res: Response
@@ -1078,7 +1094,7 @@ export class RFQController {
   /**
    * Download Excel file for a supplier for a specific RFQ
    */
-  downloadSupplierExcel = async (
+  public downloadSupplierExcel = async (
     req: Request,
     res: Response
   ): Promise<void> => {
@@ -1158,7 +1174,7 @@ export class RFQController {
   /**
    * Process Excel file uploaded by supplier
    */
-  processSupplierExcel = async (req: Request, res: Response): Promise<void> => {
+  public processSupplierExcel = async (req: Request, res: Response): Promise<void> => {
     try {
       const { rfqId, supplierId } = req.params;
 
@@ -1204,7 +1220,7 @@ export class RFQController {
   /**
    * Get all quote request versions for a supplier
    */
-  getSupplierQuoteHistory = async (
+  public getSupplierQuoteHistory = async (
     req: Request,
     res: Response
   ): Promise<void> => {
@@ -1242,9 +1258,9 @@ export class RFQController {
   };
 
   /**
-   * Get a specific version of a supplier's quote request
+   * Get a specific version of a supplier quote
    */
-  getSupplierQuoteVersion = async (
+  public getSupplierQuoteVersion = async (
     req: Request,
     res: Response
   ): Promise<void> => {
@@ -1291,9 +1307,9 @@ export class RFQController {
   };
 
   /**
-   * Get latest version of all supplier quote requests for an RFQ
+   * Get the latest quotes from all suppliers for an RFQ
    */
-  getLatestSupplierQuotes = async (
+  public getLatestSupplierQuotes = async (
     req: Request,
     res: Response
   ): Promise<void> => {
@@ -1327,9 +1343,9 @@ export class RFQController {
   };
 
   /**
-   * Get latest version of supplier quote request for a specific supplier
+   * Get the latest quote from a specific supplier for an RFQ
    */
-  getLatestSupplierQuoteForSupplier = async (
+  public getLatestSupplierQuoteForSupplier = async (
     req: Request,
     res: Response
   ): Promise<void> => {
@@ -1375,9 +1391,9 @@ export class RFQController {
   };
 
   /**
-   * Get supplier quotes for analysis
+   * Get supplier quotes formatted for analysis
    */
-  getSupplierQuotesForAnalysis = async (
+  public getSupplierQuotesForAnalysis = async (
     req: Request,
     res: Response
   ): Promise<void> => {
@@ -1411,9 +1427,12 @@ export class RFQController {
   };
 
   /**
-   * Negotiate an RFQ
+   * Negotiate an RFQ with suppliers
    */
-  negotiateRFQ = async (req: Request, res: Response): Promise<void> => {
+  public negotiateRFQ = async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
     try {
       const { id: rfqId } = req.params;
 
@@ -1467,7 +1486,13 @@ export class RFQController {
     }
   };
 
-  awardRFQ = async (req: Request, res: Response): Promise<void> => {
+  /**
+   * Award an RFQ to a supplier
+   */
+  public awardRFQ = async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
     try {
       const { id: rfqId } = req.params;
 
