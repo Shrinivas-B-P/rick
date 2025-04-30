@@ -575,7 +575,7 @@ export class RFQController {
         // If it's a single command, wrap it in an array and stringify
         commandsString = JSON.stringify([commands]);
       }
-      
+
       // Add the commands and rfxId to the form data
       console.log("commandsString", commandsString);
       formData.append("commands", commandsString);
@@ -729,17 +729,17 @@ export class RFQController {
       // Process endpoints in batches of 3
       const batchSize = 5;
       const results = [];
-      
+
       for (let i = 0; i < endpoints.length; i += batchSize) {
         const batch = endpoints.slice(i, i + batchSize);
-        console.log(`Processing batch ${i/batchSize + 1} with ${batch.length} endpoints`);
-        
+        console.log(`Processing batch ${i / batchSize + 1} with ${batch.length} endpoints`);
+
         // Create batch of promises
         const batchPromises = batch.map((endpoint, batchIndex) => {
           const index = i + batchIndex;
           return this.processEndpoint(endpoint, index, endpoints.length, rfxId, fileBuffer, fileName, fileType, res);
         });
-        
+
         // Process this batch concurrently
         const batchResults = await Promise.all(batchPromises);
         results.push(...batchResults);
@@ -765,11 +765,20 @@ export class RFQController {
         })
       );
 
+      res.write(
+        JSON.stringify({
+          success: true,
+          status: "data",
+          chunk: "Document processing completed, your template is ready to be used",
+          timestamp: new Date().toISOString(),
+        })
+      );
+
       // End the response
       res.end();
     } catch (error: any) {
       console.error("Error processing document with Gemini:", error);
-      
+
       // Send error message
       res.write(
         JSON.stringify({
@@ -779,7 +788,7 @@ export class RFQController {
           timestamp: new Date().toISOString(),
         })
       );
-      
+
       res.end();
     }
   };
@@ -788,8 +797,8 @@ export class RFQController {
    * Helper function to process a single endpoint
    */
   private processEndpoint = async (
-    endpoint: string, 
-    index: number, 
+    endpoint: string,
+    index: number,
     totalEndpoints: number,
     rfxId: string,
     fileBuffer: Buffer,
@@ -799,17 +808,17 @@ export class RFQController {
   ) => {
     try {
       console.log(`Starting endpoint: ${endpoint}`);
-      
+
       // Create a new FormData for this request
       const formData = new FormData();
       formData.append("rfxId", rfxId);
-      
+
       // Append the file as a Buffer with filename
       formData.append("file", fileBuffer, {
         filename: fileName,
         contentType: fileType,
       });
-      
+
       // Make the request to the Gemini service
       const response = await axios.post(
         `http://54.149.112.106:80/${endpoint}`,
@@ -821,12 +830,12 @@ export class RFQController {
           // Add keep-alive settings
           httpAgent: new http.Agent({ keepAlive: true }),
           httpsAgent: new https.Agent({ keepAlive: true }),
-          timeout: 300000, // 5 minutes timeout
+          timeout: 30000, // 5 minutes timeout
         }
       );
-      
+
       console.log(`Completed endpoint: ${endpoint}`);
-      
+
       // Send progress update for this endpoint
       res.write(
         JSON.stringify({
@@ -837,7 +846,7 @@ export class RFQController {
           timestamp: new Date().toISOString(),
         })
       );
-      
+
       // Send the result for this endpoint
       res.write(
         JSON.stringify({
@@ -845,7 +854,7 @@ export class RFQController {
           chunk: response.data,
         })
       );
-      
+
       return {
         endpoint,
         status: "success",
@@ -853,14 +862,14 @@ export class RFQController {
       };
     } catch (error: any) {
       console.error(`Error processing endpoint ${endpoint}:`, error);
-      
+
       // Create a safe error object without circular references
       const safeError = {
         message: error.message || "Unknown error",
         status: error.response?.status,
         data: error.response?.data,
       };
-      
+
       // Send the error for this endpoint
       res.write(
         JSON.stringify({
@@ -872,7 +881,7 @@ export class RFQController {
           timestamp: new Date().toISOString(),
         })
       );
-      
+
       return {
         endpoint,
         status: "error",
@@ -1517,6 +1526,59 @@ export class RFQController {
         success: false,
         message: "Failed to award RFQ",
         error: error.message || "Unknown error",
+      });
+    }
+  };
+
+  /**
+   * Handle sample payload and forward to external service
+   */
+  public samplePayload = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const payload = req.body;
+
+      if (!payload) {
+        res.status(400).json({
+          success: false,
+          message: "Payload is required"
+        });
+        return;
+      }
+
+      console.log("Forwarding sample payload to external service");
+
+      // Forward the payload to the external service
+      const response = await axios.post(
+        "http://localhost:8080/general/sample-payload",
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000 // 30 seconds timeout
+        }
+      );
+
+      // Return the response from the external service
+      res.status(200).json({
+        success: true,
+        message: "Sample payload processed successfully",
+        data: response.data
+      });
+    } catch (error: any) {
+      console.error("Error processing sample payload:", error);
+
+      // Create a safe error object without circular references
+      const safeError = {
+        message: error.message || "Unknown error",
+        status: error.response?.status,
+        data: error.response?.data
+      };
+
+      res.status(error.response?.status || 500).json({
+        success: false,
+        message: "Failed to process sample payload",
+        error: safeError
       });
     }
   };

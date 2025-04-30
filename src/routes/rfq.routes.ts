@@ -104,4 +104,7 @@ router.post("/:id/negotiate", rfqController.negotiateRFQ);
 
 router.post("/:id/award", rfqController.awardRFQ);
 
+// Add new route for sample payload
+router.post("/sample-payload", rfqController.samplePayload);
+
 export default router;
